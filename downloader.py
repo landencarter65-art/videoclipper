@@ -30,7 +30,7 @@ def get_latest_video_from_channel(channel_id: str) -> dict | None:
         cmd = [
             "yt-dlp",
             *cookies_args,
-            "--js-runtimes", "nodejs",
+            "--js-runtimes", "node",
             "--flat-playlist",
             "--playlist-items", "1",
             "--print", "%(id)s",
@@ -128,7 +128,7 @@ def download_video(video_url: str) -> Path:
     cmd = [
         "yt-dlp",
         *cookies_args,
-        "--js-runtimes", "nodejs",
+        "--js-runtimes", "node",
         "--format", "bestvideo[height<=720]+bestaudio/best[height<=720]",
         "--merge-output-format", "mp4",
         "--output", output_template,
@@ -152,7 +152,7 @@ def download_random_music() -> Path:
 
     cmd = [
         "yt-dlp",
-        "--js-runtimes", "nodejs",
+        "--js-runtimes", "node",
         "--flat-playlist",
         "--print", "url",
         MUSIC_PLAYLIST_URL,
@@ -178,7 +178,7 @@ def download_random_music() -> Path:
 
     cmd = [
         "yt-dlp",
-        "--js-runtimes", "nodejs",
+        "--js-runtimes", "node",
         "--format", "bestaudio",
         "--extract-audio",
         "--audio-format", "mp3",
