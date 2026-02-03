@@ -7,5 +7,7 @@ clips/
 output/
 music/
 processed_videos.json
+cookies.txt
+*cookies*.txt
 nul
 .claude/
