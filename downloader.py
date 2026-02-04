@@ -1,9 +1,10 @@
 import json
 import random
 import subprocess
+import shutil
 import feedparser
 from pathlib import Path
-from config import CHANNEL_IDS, DOWNLOADS_DIR, DB_PATH, MUSIC_DIR, MUSIC_PLAYLIST_URL, BASE_DIR
+from config import CHANNEL_IDS, DOWNLOADS_DIR, DB_PATH, MUSIC_DIR, MUSIC_LIBRARY_DIR, MUSIC_PLAYLIST_URL, BASE_DIR
 
 
 def load_processed():
@@ -149,7 +150,27 @@ def download_video(video_url: str) -> Path:
 
 
 def download_random_music() -> Path:
-    """Download a random track from the background music playlist."""
+    """Get a random track: prefer local library, fall back to YouTube download."""
+    
+    # 1. Try local library first
+    if MUSIC_LIBRARY_DIR.exists():
+        local_files = list(MUSIC_LIBRARY_DIR.glob("*.mp3"))
+        if local_files:
+            track = random.choice(local_files)
+            print(f"[MUSIC] Using local track: {track.name}")
+
+            # Prepare destination
+            for f in MUSIC_DIR.glob("*"):
+                try:
+                    f.unlink()
+                except Exception:
+                    pass
+            
+            dest = MUSIC_DIR / "bg_music.mp3"
+            shutil.copy(track, dest)
+            return dest
+
+    # 2. Fallback to YouTube download
     print("[MUSIC] Fetching playlist info...")
 
     cmd = [

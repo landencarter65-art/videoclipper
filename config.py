@@ -6,7 +6,7 @@ from pathlib import Path
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 # Use the strongest free model
-GEMINI_MODEL = "gemini-1.5-pro"
+GEMINI_MODEL = "gemini-1.5-flash"
 
 # ── YouTube Channels to Monitor ─────────────────────────────
 # Stored as HF Space secret "CHANNEL_IDS" (comma-separated)
@@ -48,6 +48,7 @@ OUTPUT_DIR = BASE_DIR / "output"
 DB_PATH = BASE_DIR / "processed_videos.json"
 
 MUSIC_DIR = BASE_DIR / "music"
+MUSIC_LIBRARY_DIR = BASE_DIR / "music_library"
 
 for d in [DOWNLOADS_DIR, CLIPS_DIR, OUTPUT_DIR, MUSIC_DIR]:
     d.mkdir(exist_ok=True)

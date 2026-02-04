@@ -5,7 +5,11 @@ from google import genai
 from google.genai import types
 from config import GEMINI_API_KEY, GEMINI_MODEL, NUM_CLIPS, CLIP_MIN_SECONDS, CLIP_MAX_SECONDS
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+client = None
+if GEMINI_API_KEY:
+    client = genai.Client(api_key=GEMINI_API_KEY)
+else:
+    print("[WARNING] GEMINI_API_KEY not set — AI features will fail until configured.")
 
 
 def transcribe_audio(audio_path: Path) -> str:
