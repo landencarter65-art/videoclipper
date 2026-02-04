@@ -1,8 +1,9 @@
 import json
 import time
+import re
 from pathlib import Path
 from google import genai
-from google.genai import types
+from google.genai import types, errors
 from config import GEMINI_API_KEY, GEMINI_MODEL, NUM_CLIPS, CLIP_MIN_SECONDS, CLIP_MAX_SECONDS
 
 client = None
@@ -10,6 +11,31 @@ if GEMINI_API_KEY:
     client = genai.Client(api_key=GEMINI_API_KEY)
 else:
     print("[WARNING] GEMINI_API_KEY not set — AI features will fail until configured.")
+
+
+def call_with_retry(func, *args, **kwargs):
+    """Retries the API call if a 429 Resource Exhausted error occurs."""
+    max_retries = 10
+    base_delay = 45  # Start with 45s (API asked for 36s+)
+    
+    for attempt in range(max_retries):
+        try:
+            return func(*args, **kwargs)
+        except errors.ClientError as e:
+            if e.code == 429:
+                # Extract wait time from error message if possible
+                wait_time = base_delay * (1.5 ** attempt) # Exponential backoff
+                
+                # Try to find specific retry time in error message
+                match = re.search(r'retry in (\d+\.?\d*)s', str(e))
+                if match:
+                    wait_time = float(match.group(1)) + 5 # Add buffer
+                
+                print(f"[AI] Quota exceeded (429). Retrying in {wait_time:.1f}s... (Attempt {attempt+1}/{max_retries})")
+                time.sleep(wait_time)
+            else:
+                raise e
+    raise RuntimeError(f"Max retries exceeded for Gemini API call.")
 
 
 def transcribe_audio(audio_path: Path) -> str:
@@ -25,7 +51,8 @@ def transcribe_audio(audio_path: Path) -> str:
     if audio_file.state.name == "FAILED":
         raise RuntimeError("Gemini file upload failed")
 
-    response = client.models.generate_content(
+    response = call_with_retry(
+        client.models.generate_content,
         model=GEMINI_MODEL,
         contents=[
             audio_file,
@@ -80,7 +107,8 @@ Return ONLY valid JSON (no markdown, no code blocks), an array of objects:
   }}
 ]"""
 
-    response = client.models.generate_content(
+    response = call_with_retry(
+        client.models.generate_content,
         model=GEMINI_MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(
@@ -127,7 +155,8 @@ RULES:
 
 Return ONLY the voiceover script text, nothing else."""
 
-    response = client.models.generate_content(
+    response = call_with_retry(
+        client.models.generate_content,
         model=GEMINI_MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(
@@ -156,7 +185,8 @@ Generate YouTube metadata for this short clip. Return ONLY valid JSON (no markdo
   "tags": ["tag1", "tag2", "tag3", "up to 15 relevant tags for YouTube search SEO, mix of broad gaming tags and specific Roblox tags"]
 }}"""
 
-    response = client.models.generate_content(
+    response = call_with_retry(
+        client.models.generate_content,
         model=GEMINI_MODEL,
         contents=prompt,
         config=types.GenerateContentConfig(
