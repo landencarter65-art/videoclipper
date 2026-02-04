@@ -6,7 +6,7 @@ from pathlib import Path
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 # Use the strongest free model
-GEMINI_MODEL = "gemini-1.5-flash"
+GEMINI_MODEL = "gemini-2.0-flash"
 
 # ── YouTube Channels to Monitor ─────────────────────────────
 # Stored as HF Space secret "CHANNEL_IDS" (comma-separated)
