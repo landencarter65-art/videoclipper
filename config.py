@@ -5,8 +5,13 @@ from pathlib import Path
 # Stored as HF Space secret "GEMINI_API_KEY" — never hardcode
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
+# ── Groq API ────────────────────────────────────────────────
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL = "llama-3.3-70b-versatile"
+WHISPER_MODEL = "whisper-large-v3"
+
 # Use the strongest free model
-GEMINI_MODEL = "gemini-2.0-flash"
+GEMINI_MODEL = "gemini-flash-latest"
 
 # ── YouTube Channels to Monitor ─────────────────────────────
 # Stored as HF Space secret "CHANNEL_IDS" (comma-separated)

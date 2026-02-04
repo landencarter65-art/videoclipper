@@ -45,8 +45,8 @@ def process_video(video_url: str, video_title: str = "Unknown"):
     audio_path = extract_audio(video_path)
     print(f"  → Audio: {audio_path.name}")
 
-    # Step 4: Transcribe with Gemini
-    print("\n[4/7] Transcribing with Gemini (AI)...")
+    # Step 4: Transcribe with Groq
+    print("\n[4/7] Transcribing with Groq (Whisper)...")
     transcript = transcribe_audio(audio_path)
     print(f"  → Transcript length: {len(transcript)} chars")
 
