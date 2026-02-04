@@ -224,13 +224,14 @@ def download_random_music() -> Path:
 
 
 def extract_audio(video_path: Path) -> Path:
-    """Extract audio from video for transcription."""
-    audio_path = video_path.with_suffix(".wav")
+    """Extract audio from video for transcription (compressed mp3 for API limits)."""
+    audio_path = video_path.with_suffix(".mp3")
     cmd = [
         "ffmpeg", "-y",
         "-i", str(video_path),
         "-vn",
-        "-acodec", "pcm_s16le",
+        "-acodec", "libmp3lame",
+        "-ab", "64k",
         "-ar", "16000",
         "-ac", "1",
         str(audio_path),
