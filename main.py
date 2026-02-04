@@ -55,8 +55,9 @@ def process_video(video_url: str, video_title: str = "Unknown"):
     transcript_path.write_text(transcript, encoding="utf-8")
 
     # Step 5: Select best clips
-    print("\n[5/7] Selecting best clips with AI...")
-    clips = select_best_clips(transcript, video_title)
+    print("\n[5/7] Selecting best clips (Heuristic)...")
+    # Pass video_path so heuristic mode can calculate duration
+    clips = select_best_clips(transcript, video_title, video_path=video_path)
     print(f"  → Found {len(clips)} clips")
     for c in clips:
         print(f"     Clip {c['clip_number']}: {c['start_time']} → {c['end_time']} | {c['title']}")

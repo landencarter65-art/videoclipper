@@ -1,209 +1,119 @@
 import json
-import time
+import subprocess
 import re
 from pathlib import Path
-from google import genai
-from google.genai import types, errors
-from config import GEMINI_API_KEY, GEMINI_MODEL, NUM_CLIPS, CLIP_MIN_SECONDS, CLIP_MAX_SECONDS
-
-client = None
-if GEMINI_API_KEY:
-    client = genai.Client(api_key=GEMINI_API_KEY)
-else:
-    print("[WARNING] GEMINI_API_KEY not set — AI features will fail until configured.")
-
+# Note: we are not using the google.genai client for the heuristic version
+from config import NUM_CLIPS, CLIP_MIN_SECONDS, CLIP_MAX_SECONDS
 
 def call_with_retry(func, *args, **kwargs):
-    """Retries the API call if a 429 Resource Exhausted error occurs."""
-    max_retries = 10
-    base_delay = 45  # Start with 45s (API asked for 36s+)
-    
-    for attempt in range(max_retries):
-        try:
-            return func(*args, **kwargs)
-        except errors.ClientError as e:
-            if e.code == 429:
-                # Extract wait time from error message if possible
-                wait_time = base_delay * (1.5 ** attempt) # Exponential backoff
-                
-                # Try to find specific retry time in error message
-                match = re.search(r'retry in (\d+\.?\d*)s', str(e))
-                if match:
-                    wait_time = float(match.group(1)) + 5 # Add buffer
-                
-                print(f"[AI] Quota exceeded (429). Retrying in {wait_time:.1f}s... (Attempt {attempt+1}/{max_retries})")
-                time.sleep(wait_time)
-            else:
-                raise e
-    raise RuntimeError(f"Max retries exceeded for Gemini API call.")
+    """(Deprecated) Retries the API call - no-op for heuristic mode."""
+    return func(*args, **kwargs)
 
+def get_video_duration(video_path: Path) -> float:
+    """Get the duration of a video file in seconds using ffprobe."""
+    try:
+        cmd = [
+            "ffprobe",
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(video_path)
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return float(result.stdout.strip())
+    except Exception as e:
+        print(f"[ERROR] Could not get video duration: {e}")
+        return 600.0 # Default fallback duration
 
 def transcribe_audio(audio_path: Path) -> str:
-    """Upload audio to Gemini and get a timestamped transcript."""
-    print(f"[AI] Uploading audio for transcription: {audio_path.name}")
-    audio_file = client.files.upload(file=str(audio_path))
+    """
+    (Heuristic Mode) Skips AI transcription.
+    Returns a dummy transcript since we aren't using AI.
+    """
+    print(f"[Heuristic] Skipping AI transcription for {audio_path.name}")
+    return "HEURISTIC_MODE_SKIPPED_TRANSCRIPTION"
 
-    # Wait for file to be processed
-    while audio_file.state.name == "PROCESSING":
-        time.sleep(5)
-        audio_file = client.files.get(name=audio_file.name)
+def select_best_clips(transcript: str, video_title: str, video_path: Path = None) -> list[dict]:
+    """
+    (Heuristic Mode) Selects clips based on equidistant intervals.
+    Requires video_path to be passed (we modified main.py to pass it).
+    """
+    print("[Heuristic] Selecting clips based on video duration...")
+    
+    duration = 0.0
+    if video_path and video_path.exists():
+        duration = get_video_duration(video_path)
+    else:
+        # Fallback if video_path isn't passed (though main.py should pass it)
+        print("[WARN] Video path missing for duration check, using defaults.")
+        duration = 600.0
 
-    if audio_file.state.name == "FAILED":
-        raise RuntimeError("Gemini file upload failed")
+    clips = []
+    # Avoid the first 10% and last 10% of the video
+    start_buffer = duration * 0.1
+    end_buffer = duration * 0.9
+    available_duration = end_buffer - start_buffer
+    
+    if available_duration < CLIP_MAX_SECONDS:
+         # Video too short, just take one from the middle
+         step = 0
+         points = [duration / 2]
+    else:
+        # Divide the available space into N segments
+        step = available_duration / (NUM_CLIPS + 1)
+        points = [start_buffer + step * (i + 1) for i in range(NUM_CLIPS)]
 
-    response = call_with_retry(
-        client.models.generate_content,
-        model=GEMINI_MODEL,
-        contents=[
-            audio_file,
-            """Transcribe this audio with precise timestamps.
-Format each segment as:
-[MM:SS - MM:SS] Text spoken in this segment
+    for i, point in enumerate(points):
+        # Ensure clip doesn't exceed video length
+        start_sec = point
+        end_sec = min(start_sec + CLIP_MAX_SECONDS, duration - 5)
+        
+        # Format as MM:SS
+        start_str = f"{int(start_sec // 60):02d}:{int(start_sec % 60):02d}"
+        end_str = f"{int(end_sec // 60):02d}:{int(end_sec % 60):02d}"
+        
+        clips.append({
+            "clip_number": i + 1,
+            "start_time": start_str,
+            "end_time": end_str,
+            "title": f"Part {i+1} - {video_title}",
+            "reason": "Heuristic selection",
+            "hook": f"Watch part {i+1} of {video_title}"
+        })
 
-Be very precise with timestamps. Include every spoken word.
-Group text into natural segments of 5-15 seconds each.""",
-        ],
-        config=types.GenerateContentConfig(
-            temperature=0.1,
-            max_output_tokens=8192,
-        ),
-    )
-
-    # Clean up uploaded file
-    try:
-        client.files.delete(name=audio_file.name)
-    except Exception:
-        pass
-
-    return response.text
-
-
-def select_best_clips(transcript: str, video_title: str) -> list[dict]:
-    """Use Gemini to pick the most engaging clips from the transcript."""
-    print("[AI] Analyzing transcript for best clips...")
-
-    prompt = f"""You are a viral video editor. Analyze this transcript from the video titled "{video_title}".
-
-TRANSCRIPT:
-{transcript}
-
-Find the {NUM_CLIPS} most engaging, viral-worthy segments. Each clip must be {CLIP_MIN_SECONDS}-{CLIP_MAX_SECONDS} seconds long.
-
-Look for moments that are:
-- Emotionally intense or surprising
-- Contains a complete thought or story beat
-- Would hook a viewer scrolling on social media
-- Has a strong opening line
-
-Return ONLY valid JSON (no markdown, no code blocks), an array of objects:
-[
-  {{
-    "clip_number": 1,
-    "start_time": "MM:SS",
-    "end_time": "MM:SS",
-    "title": "Short catchy title for this clip",
-    "reason": "Why this segment is engaging",
-    "hook": "The opening line that grabs attention"
-  }}
-]"""
-
-    response = call_with_retry(
-        client.models.generate_content,
-        model=GEMINI_MODEL,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            temperature=0.7,
-            max_output_tokens=2048,
-        ),
-    )
-
-    text = response.text.strip()
-    # Strip markdown code fences if present
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1]
-    if text.endswith("```"):
-        text = text.rsplit("```", 1)[0]
-    text = text.strip()
-
-    clips = json.loads(text)
     return clips
 
-
 def generate_voiceover_script(clip_transcript: str, clip_title: str, video_title: str) -> str:
-    """Generate a commentary voiceover script that adds value and transforms the content."""
-    print(f"[AI] Generating voiceover script for: {clip_title}")
-
-    prompt = f"""You are a professional video commentator creating transformative content.
-
-ORIGINAL VIDEO: "{video_title}"
-CLIP: "{clip_title}"
-CLIP TRANSCRIPT:
-{clip_transcript}
-
-Write a SHORT voiceover commentary script (4-6 sentences) that:
-1. Opens with a hook that adds YOUR perspective (don't repeat what's said in the clip)
-2. Adds analysis, context, or insight that the original doesn't provide
-3. Shares an opinion or reaction that makes this YOUR content
-4. Ends with a thought-provoking statement or call to engagement
-
-RULES:
-- Do NOT narrate or summarize what's happening — the viewer can see/hear that
-- DO add your own analysis, facts, or perspective
-- Keep it concise — this plays OVER the original audio
-- Sound natural, like a real commentator, not robotic
-- Use conversational tone
-
-Return ONLY the voiceover script text, nothing else."""
-
-    response = call_with_retry(
-        client.models.generate_content,
-        model=GEMINI_MODEL,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            temperature=0.9,
-            max_output_tokens=1024,
-        ),
-    )
-
-    return response.text.strip()
-
+    """
+    (Heuristic Mode) Returns a generic voiceover script.
+    """
+    print(f"[Heuristic] Generating generic voiceover for: {clip_title}")
+    
+    templates = [
+        f"You won't believe what happens in this part of {video_title}. Watch till the end!",
+        f"Check out this crazy moment from {video_title}. Subscribe for more daily clips!",
+        f"This is one of the best moments from {video_title}. What do you think? Let us know in the comments."
+    ]
+    
+    # Pick one based on clip title hash (so it's deterministic for the same clip)
+    index = hash(clip_title) % len(templates)
+    return templates[index]
 
 def generate_youtube_metadata(clip_title: str, clip_hook: str, video_title: str) -> dict:
-    """Generate SEO-optimized YouTube title, description, and tags for a clip."""
-    print(f"[AI] Generating YouTube metadata for: {clip_title}")
+    """
+    (Heuristic Mode) Returns generic metadata.
+    """
+    print(f"[Heuristic] Generating generic metadata for: {clip_title}")
+    
+    return {
+        "title": f"CRAZY MOMENT in {video_title} #shorts",
+        "description": f"Best moments from {video_title}!
 
-    prompt = f"""You are a YouTube SEO expert specializing in Roblox gaming shorts.
+Subscribe for more daily Roblox clips.
 
-ORIGINAL VIDEO: "{video_title}"
-CLIP TITLE: "{clip_title}"
-CLIP HOOK: "{clip_hook}"
-
-Generate YouTube metadata for this short clip. Return ONLY valid JSON (no markdown, no code blocks):
-{{
-  "title": "A catchy, clickbait-style YouTube title under 70 characters. Use caps for emphasis. Include relevant keywords like Roblox.",
-  "description": "A YouTube description (3-5 lines) with:\n- Line 1: Hook sentence\n- Line 2: What happens in the clip\n- Line 3: Call to action (like, subscribe, comment)\n- Line 4-5: Hashtags (at least 8, mix of broad and niche Roblox tags)",
-  "tags": ["tag1", "tag2", "tag3", "up to 15 relevant tags for YouTube search SEO, mix of broad gaming tags and specific Roblox tags"]
-}}"""
-
-    response = call_with_retry(
-        client.models.generate_content,
-        model=GEMINI_MODEL,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            temperature=0.8,
-            max_output_tokens=1024,
-        ),
-    )
-
-    text = response.text.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1]
-    if text.endswith("```"):
-        text = text.rsplit("```", 1)[0]
-    text = text.strip()
-
-    return json.loads(text)
-
+#roblox #gaming #shorts #viral",
+        "tags": ["roblox", "gaming", "shorts", "clips", "viral", "funny moments"]
+    }
 
 def timestamp_to_seconds(ts: str) -> float:
     """Convert MM:SS or HH:MM:SS to seconds."""
