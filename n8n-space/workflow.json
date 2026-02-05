@@ -69,11 +69,11 @@
           },
           "conditions": [
             {
-              "id": "not-skip",
-              "leftValue": "={{ $json.skip }}",
-              "rightValue": true,
+              "id": "has-url",
+              "leftValue": "={{ $json.url }}",
+              "rightValue": "",
               "operator": {
-                "type": "boolean",
+                "type": "string",
                 "operation": "notEquals"
               }
             }

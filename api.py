@@ -168,6 +168,13 @@ async def check_channels():
 @app.post("/process-video", dependencies=[Depends(verify_auth)])
 async def start_processing(req: ProcessRequest):
     """Start processing a video. Returns a job_id to poll for completion."""
+    # Validate URL is not empty
+    if not req.url or not req.url.strip():
+        raise HTTPException(400, "URL is required and cannot be empty")
+
+    if not req.url.startswith("http"):
+        raise HTTPException(400, f"Invalid URL format: {req.url}")
+
     # Check if another job is already running
     running = [j for j in jobs.values() if j["status"] == "processing"]
     if running:
@@ -176,7 +183,7 @@ async def start_processing(req: ProcessRequest):
     job_id = str(uuid.uuid4())[:8]
     jobs[job_id] = {"status": "processing", "clips": [], "error": None}
 
-    thread = threading.Thread(target=_run_job, args=(job_id, req.url, req.title), daemon=True)
+    thread = threading.Thread(target=_run_job, args=(job_id, req.url.strip(), req.title.strip()), daemon=True)
     thread.start()
 
     return {"job_id": job_id, "status": "processing"}
