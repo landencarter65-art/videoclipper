@@ -112,17 +112,17 @@ def process_video(video_url: str, video_title: str = "Unknown", progress_callbac
         script_path = CLIPS_DIR / f"script_{clip_num}.txt"
         script_path.write_text(vo_script, encoding="utf-8")
 
-        # Generate voiceover audio
+        # Generate voiceover audio (also extracts word timings for subtitles)
         vo_audio_path = CLIPS_DIR / f"voiceover_{clip_num}.mp3"
-        generate_voiceover_audio(vo_script, vo_audio_path)
-        step_progress(f"Clip {clip_num}: Generated voiceover")
+        _, word_timings = generate_voiceover_audio(vo_script, vo_audio_path)
+        step_progress(f"Clip {clip_num}: Generated voiceover ({len(word_timings)} words)")
 
         # Mix voiceover + background music with clip
         mixed_path = mix_voiceover(clip_path, vo_audio_path, music_path, clip_num)
         step_progress(f"Clip {clip_num}: Mixed audio")
-        
-        # Add subtitles (using the voiceover script as text)
-        final_path = add_subtitles(mixed_path, vo_script, clip_num)
+
+        # Add TikTok-style subtitles (word-by-word highlighting synced to voiceover)
+        final_path = add_subtitles(mixed_path, vo_script, clip_num, word_timings=word_timings)
         final_outputs.append(final_path)
         step_progress(f"Clip {clip_num}: Added subtitles")
         
