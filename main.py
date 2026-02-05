@@ -20,7 +20,7 @@ from config import DOWNLOADS_DIR, CLIPS_DIR, OUTPUT_DIR, NUM_CLIPS
 from downloader import check_new_videos, download_video, extract_audio, mark_processed, download_random_music
 from gemini_ai import transcribe_audio, select_best_clips, generate_voiceover_script, generate_youtube_metadata, timestamp_to_seconds
 from voiceover import generate_voiceover_audio
-from video_processor import cut_clip, mix_voiceover, cleanup_temp_files, add_subtitles
+from video_processor import cut_clip, mix_voiceover, cleanup_temp_files
 
 
 def process_video(video_url: str, video_title: str = "Unknown", progress_callback=None):
@@ -42,9 +42,9 @@ def process_video(video_url: str, video_title: str = "Unknown", progress_callbac
     print(f"URL: {video_url}")
     print(f"{'='*60}\n")
 
-    # Pipeline has 5 initial steps + 5 steps per clip (assuming NUM_CLIPS clips)
-    # Total steps: 5 + (NUM_CLIPS * 5) = 5 + 15 = 20 steps for 3 clips
-    total_steps = 5 + (NUM_CLIPS * 5)
+    # Pipeline has 5 initial steps + 4 steps per clip (assuming NUM_CLIPS clips)
+    # Total steps: 5 + (NUM_CLIPS * 4) = 5 + 12 = 17 steps for 3 clips
+    total_steps = 5 + (NUM_CLIPS * 4)
     current_step = 0
 
     def step_progress(step_name: str):
@@ -132,12 +132,9 @@ def process_video(video_url: str, video_title: str = "Unknown", progress_callbac
 
         # Mix voiceover + background music with clip
         mixed_path = mix_voiceover(clip_path, vo_audio_path, music_path, clip_num)
-        step_progress(f"Clip {clip_num}: Mixed audio")
-
-        # Add TikTok-style subtitles (word-by-word synced to voiceover)
-        final_path = add_subtitles(mixed_path, vo_script, clip_num, word_timings=word_timings)
+        final_path = mixed_path
         final_outputs.append(final_path)
-        step_progress(f"Clip {clip_num}: Added subtitles")
+        step_progress(f"Clip {clip_num}: Mixed audio")
         
         gc.collect()
 
