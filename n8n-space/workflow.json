@@ -52,10 +52,10 @@
     },
     {
       "parameters": {
-        "jsCode": "// Parse RSS XML and extract latest video\n\nfor (const item of $input.all()) {\n  const xml = item.json.data || item.json.body || '';\n  if (!xml || typeof xml !== 'string') continue;\n\n  // Extract first video entry from RSS XML\n  const entryMatch = xml.match(/<entry>[\\s\\S]*?<\\/entry>/);\n  if (!entryMatch) continue;\n\n  const entry = entryMatch[0];\n  const videoId = entry.match(/<yt:videoId>([^<]+)<\\/yt:videoId>/);\n  const title = entry.match(/<title>([^<]+)<\\/title>/);\n  const link = entry.match(/<link rel=\\\"alternate\\\" href=\\\"([^\\\"]+)\\\"/);\n\n  if (videoId && title) {\n    // Return only the first video found\n    return [{\n      json: {\n        video_id: videoId[1],\n        title: title[1],\n        url: link ? link[1] : `https://www.youtube.com/watch?v=${videoId[1]}`\n      }\n    }];\n  }\n}\n\nreturn [{ json: { skip: true } }];"
+        "jsCode": "// Parse RSS XML from all channels and pick ONE random video for today\n\nconst allVideos = [];\n\nfor (const item of $input.all()) {\n  const xml = item.json.data || item.json.body || '';\n  if (!xml || typeof xml !== 'string') continue;\n\n  // Extract first video entry from RSS XML\n  const entryMatch = xml.match(/<entry>[\\s\\S]*?<\\/entry>/);\n  if (!entryMatch) continue;\n\n  const entry = entryMatch[0];\n  const videoId = entry.match(/<yt:videoId>([^<]+)<\\/yt:videoId>/);\n  const title = entry.match(/<title>([^<]+)<\\/title>/);\n  const link = entry.match(/<link rel=\\\"alternate\\\" href=\\\"([^\\\"]+)\\\"/);\n\n  if (videoId && title) {\n    allVideos.push({\n      video_id: videoId[1],\n      title: title[1],\n      url: link ? link[1] : `https://www.youtube.com/watch?v=${videoId[1]}`\n    });\n  }\n}\n\n// Pick ONE random video (limit: 1 video per day)\nif (allVideos.length > 0) {\n  const selected = allVideos[Math.floor(Math.random() * allVideos.length)];\n  return [{ json: selected }];\n}\n\nreturn [{ json: { skip: true } }];"
       },
       "id": "node-parse-rss",
-      "name": "Parse RSS",
+      "name": "Pick One Video",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [860, 300]
@@ -82,21 +82,10 @@
         }
       },
       "id": "node-if-videos",
-      "name": "Has Videos?",
+      "name": "Has Video?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [1080, 300]
-    },
-    {
-      "parameters": {
-        "batchSize": 1,
-        "options": {}
-      },
-      "id": "node-split-batches",
-      "name": "Loop Over Videos",
-      "type": "n8n-nodes-base.splitInBatches",
-      "typeVersion": 1,
-      "position": [1300, 300]
     },
     {
       "parameters": {
@@ -114,7 +103,7 @@
       "name": "Wake Python Space",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1500, 300]
+      "position": [1300, 300]
     },
     {
       "parameters": {
@@ -125,7 +114,7 @@
       "name": "Wait for Boot",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
-      "position": [1700, 300]
+      "position": [1500, 300]
     },
     {
       "parameters": {
@@ -146,7 +135,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={ \"url\": \"{{ $('Loop Over Videos').item.json.url }}\" , \"title\": \"{{ $('Loop Over Videos').item.json.title }}\" }",
+        "jsonBody": "={ \"url\": \"{{ $json.url }}\" , \"title\": \"{{ $json.title }}\" }",
         "options": {
           "timeout": 30000
         }
@@ -155,7 +144,7 @@
       "name": "Start Processing",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1900, 300],
+      "position": [1700, 300],
       "alwaysOutputData": true
     },
     {
@@ -167,7 +156,7 @@
       "name": "Wait 60s",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
-      "position": [2100, 300]
+      "position": [1900, 300]
     },
     {
       "parameters": {
@@ -190,7 +179,7 @@
       "name": "Poll Job Status",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2300, 300]
+      "position": [2100, 300]
     },
     {
       "parameters": {
@@ -217,7 +206,7 @@
       "name": "Job Done?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [2500, 300]
+      "position": [2300, 300]
     },
     {
       "parameters": {
@@ -227,7 +216,7 @@
       "name": "Split Clips",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2700, 200]
+      "position": [2500, 200]
     },
     {
       "parameters": {
@@ -255,7 +244,7 @@
       "name": "Download Clip",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2900, 200]
+      "position": [2700, 200]
     },
     {
       "parameters": {
@@ -272,7 +261,7 @@
       "name": "Upload to YouTube",
       "type": "n8n-nodes-base.youTube",
       "typeVersion": 1,
-      "position": [3100, 200],
+      "position": [2900, 200],
       "credentials": {
         "youTubeOAuth2Api": {
           "id": "REPLACE_WITH_CREDENTIAL_ID",
@@ -301,7 +290,7 @@
       "name": "Cleanup Files",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [3300, 200]
+      "position": [3100, 200]
     },
     {
       "parameters": {},
@@ -339,29 +328,29 @@
       "main": [
         [
           {
-            "node": "Parse RSS",
+            "node": "Pick One Video",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Parse RSS": {
+    "Pick One Video": {
       "main": [
         [
           {
-            "node": "Has Videos?",
+            "node": "Has Video?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Has Videos?": {
+    "Has Video?": {
       "main": [
         [
           {
-            "node": "Loop Over Videos",
+            "node": "Wake Python Space",
             "type": "main",
             "index": 0
           }
@@ -369,17 +358,6 @@
         [
           {
             "node": "No New Videos",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Loop Over Videos": {
-      "main": [
-        [
-          {
-            "node": "Wake Python Space",
             "type": "main",
             "index": 0
           }
@@ -486,17 +464,6 @@
         [
           {
             "node": "Cleanup Files",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Cleanup Files": {
-      "main": [
-        [
-          {
-            "node": "Loop Over Videos",
             "type": "main",
             "index": 0
           }

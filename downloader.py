@@ -3,18 +3,41 @@ import random
 import subprocess
 import shutil
 import feedparser
+from datetime import date
 from pathlib import Path
 from config import CHANNEL_IDS, DOWNLOADS_DIR, DB_PATH, MUSIC_DIR, MUSIC_LIBRARY_DIR, MUSIC_PLAYLIST_URL, BASE_DIR
 
 
 def load_processed():
+    """Load processed videos database. Returns dict with 'videos' list and 'last_processed_date'."""
     if DB_PATH.exists():
-        return json.loads(DB_PATH.read_text())
-    return []
+        data = json.loads(DB_PATH.read_text())
+        # Migrate old format (list) to new format (dict)
+        if isinstance(data, list):
+            return {"videos": data, "last_processed_date": None}
+        return data
+    return {"videos": [], "last_processed_date": None}
 
 
-def save_processed(video_ids):
-    DB_PATH.write_text(json.dumps(video_ids))
+def save_processed(data):
+    """Save processed videos database."""
+    DB_PATH.write_text(json.dumps(data))
+
+
+def was_video_processed_today() -> bool:
+    """Check if we already processed a video today."""
+    data = load_processed()
+    last_date = data.get("last_processed_date")
+    if last_date:
+        return last_date == str(date.today())
+    return False
+
+
+def mark_processed_today():
+    """Update the last processed date to today."""
+    data = load_processed()
+    data["last_processed_date"] = str(date.today())
+    save_processed(data)
 
 
 def get_latest_video_from_channel(channel_id: str) -> dict | None:
@@ -85,32 +108,49 @@ def get_latest_video_from_channel(channel_id: str) -> dict | None:
 
 
 def check_new_videos() -> list[dict]:
-    """Check all monitored channels for new (unprocessed) videos."""
+    """Check all monitored channels for new (unprocessed) videos. Returns max 1 video per day."""
+    # Check if we already processed a video today
+    if was_video_processed_today():
+        print("[CHECK] Already processed a video today. Limit: 1 video/day.")
+        return []
+
     print(f"[CHECK] Checking {len(CHANNEL_IDS)} channels...")
-    processed = load_processed()
-    print(f"[CHECK] Already processed: {len(processed)} videos")
+    data = load_processed()
+    processed_ids = data.get("videos", [])
+    print(f"[CHECK] Already processed: {len(processed_ids)} videos total")
     new_videos = []
 
     for channel_id in CHANNEL_IDS:
         print(f"[CHECK] Checking channel: {channel_id}")
         video = get_latest_video_from_channel(channel_id)
         if video:
-            if video["video_id"] not in processed:
-                print(f"  → NEW: {video['title']}")
+            if video["video_id"] not in processed_ids:
+                print(f"  -> NEW: {video['title']}")
                 new_videos.append(video)
             else:
-                print(f"  → Already processed: {video['title']}")
+                print(f"  -> Already processed: {video['title']}")
         else:
-            print(f"  → No video found")
+            print(f"  -> No video found")
 
     print(f"[CHECK] Found {len(new_videos)} new videos")
-    return new_videos
+
+    # Return only ONE video (random selection) to enforce daily limit
+    if new_videos:
+        selected = random.choice(new_videos)
+        print(f"[CHECK] Selected for today: {selected['title']}")
+        return [selected]
+
+    return []
 
 
 def mark_processed(video_id: str):
-    processed = load_processed()
-    processed.append(video_id)
-    save_processed(processed[-500:])
+    """Mark a video as processed and update today's date."""
+    data = load_processed()
+    videos = data.get("videos", [])
+    videos.append(video_id)
+    data["videos"] = videos[-500:]  # Keep last 500
+    data["last_processed_date"] = str(date.today())
+    save_processed(data)
 
 
 def download_video(video_url: str) -> Path:
