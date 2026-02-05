@@ -189,6 +189,12 @@ async def start_processing(req: ProcessRequest):
         raise HTTPException(409, "Another job is already running. Wait for it to finish.")
 
     job_id = str(uuid.uuid4())[:8]
+    
+    # Simple cleanup of old jobs to prevent memory growth
+    if len(jobs) > 20:
+        oldest_job = next(iter(jobs))
+        del jobs[oldest_job]
+
     jobs[job_id] = {
         "status": "processing",
         "progress": 0,

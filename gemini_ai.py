@@ -18,7 +18,7 @@ def transcribe_audio(audio_path: Path) -> str:
     
     with open(audio_path, "rb") as file:
         transcription = client.audio.transcriptions.create(
-            file=(audio_path.name, file.read()),
+            file=(audio_path.name, file),
             model=WHISPER_MODEL,
             response_format="verbose_json",
         )

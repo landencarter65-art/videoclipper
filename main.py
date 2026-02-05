@@ -11,6 +11,7 @@ Usage:
 
 import argparse
 import sys
+import gc
 from pathlib import Path
 
 from tqdm import tqdm
@@ -70,8 +71,11 @@ def process_video(video_url: str, video_title: str = "Unknown", progress_callbac
     step_progress(f"Audio extracted: {audio_path.name}")
 
     # Step 4: Transcribe with Groq
-    transcript = transcribe_audio(audio_path)
-    step_progress(f"Transcribed: {len(transcript)} chars")
+    try:
+        transcript = transcribe_audio(audio_path)
+        step_progress(f"Transcribed: {len(transcript)} chars")
+    finally:
+        gc.collect()
 
     # Save transcript for reference
     transcript_path = DOWNLOADS_DIR / f"{video_path.stem}_transcript.txt"
@@ -117,6 +121,8 @@ def process_video(video_url: str, video_title: str = "Unknown", progress_callbac
         final_path = mix_voiceover(clip_path, vo_audio_path, music_path, clip_num)
         final_outputs.append(final_path)
         step_progress(f"Clip {clip_num}: Mixed audio")
+        
+        gc.collect()
 
         # Generate YouTube metadata
         try:
@@ -148,10 +154,12 @@ def process_video(video_url: str, video_title: str = "Unknown", progress_callbac
 
     # Clean up downloaded video and audio
     try:
-        video_path.unlink()
-        audio_path.unlink()
+        if video_path.exists(): video_path.unlink()
+        if audio_path.exists(): audio_path.unlink()
     except Exception:
         pass
+    
+    gc.collect()
 
     print(f"\n{'='*60}")
     print(f"DONE! {len(final_outputs)} clips ready in: {OUTPUT_DIR}")

@@ -135,7 +135,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={ \"url\": \"{{ $json.url }}\" , \"title\": \"{{ $json.title }}\" }",
+        "jsonBody": "={ \"url\": \"{{ $('Pick One Video').item.json.url }}\" , \"title\": \"{{ $('Pick One Video').item.json.title }}\" }",
         "options": {
           "timeout": 30000
         }
@@ -259,12 +259,12 @@
     {
       "parameters": {
         "resource": "video",
-        "title": "={{ $json.title }}",
+        "title": "={{ $('Split Clips').item.json.title }}",
         "categoryId": "20",
         "options": {
-          "description": "={{ $json.description }}",
+          "description": "={{ $('Split Clips').item.json.description }}",
           "privacyStatus": "public",
-          "tags": "={{ $json.tags.join(',') }}"
+          "tags": "={{ $('Split Clips').item.json.tags.join(',') }}"
         }
       },
       "id": "node-youtube-upload",

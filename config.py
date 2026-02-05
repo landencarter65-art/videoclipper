@@ -24,7 +24,7 @@ CHANNEL_IDS = [c.strip() for c in _raw_channels.split(",") if c.strip()]
 API_SECRET = os.getenv("API_SECRET", "")
 
 # ── Clip Settings ───────────────────────────────────────────
-NUM_CLIPS = 3
+NUM_CLIPS = 1
 CLIP_MIN_SECONDS = 30
 CLIP_MAX_SECONDS = 60    # Max 60 seconds per clip
 
@@ -39,8 +39,8 @@ TTS_VOICE = "en-US-GuyNeural"
 # ── FFmpeg Quality ──────────────────────────────────────────
 # HF free tier has 2 vCPU — use "medium" preset to avoid timeout
 VIDEO_CODEC = "libx264"
-VIDEO_CRF = "20"            # Slightly higher than 18 to stay within CPU limits
-VIDEO_PRESET = "medium"     # Balanced for 2 vCPU
+VIDEO_CRF = "22"            # Higher CRF = lower quality = less memory/CPU
+VIDEO_PRESET = "faster"     # Faster preset = less memory usage
 AUDIO_BITRATE = "192k"
 ORIGINAL_AUDIO_VOLUME = "0.15"
 
