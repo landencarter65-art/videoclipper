@@ -71,10 +71,10 @@
             {
               "id": "has-url",
               "leftValue": "={{ $json.url }}",
-              "rightValue": "",
+              "rightValue": "http",
               "operator": {
                 "type": "string",
-                "operation": "notEquals"
+                "operation": "startsWith"
               }
             }
           ],
