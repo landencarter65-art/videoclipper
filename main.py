@@ -13,6 +13,8 @@ import argparse
 import sys
 from pathlib import Path
 
+from tqdm import tqdm
+
 from config import DOWNLOADS_DIR, CLIPS_DIR, OUTPUT_DIR
 from downloader import check_new_videos, download_video, extract_audio, mark_processed, download_random_music
 from gemini_ai import transcribe_audio, select_best_clips, generate_voiceover_script, generate_youtube_metadata, timestamp_to_seconds
@@ -27,75 +29,104 @@ def process_video(video_url: str, video_title: str = "Unknown"):
     print(f"URL: {video_url}")
     print(f"{'='*60}\n")
 
-    # Step 1: Download video + background music
-    print("[1/7] Downloading video...")
-    video_path = download_video(video_url)
-    print(f"  → Downloaded: {video_path.name}")
+    # Define pipeline steps
+    steps = [
+        "Downloading video",
+        "Downloading background music",
+        "Extracting audio",
+        "Transcribing with Groq",
+        "Selecting best clips",
+    ]
 
-    print("\n[2/7] Downloading background music from playlist...")
+    # Create main progress bar
+    pbar = tqdm(total=len(steps), desc="Pipeline", unit="step", ncols=80, bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} {desc}")
+
+    # Step 1: Download video
+    pbar.set_description("Downloading video")
+    video_path = download_video(video_url)
+    pbar.update(1)
+    tqdm.write(f"  -> Downloaded: {video_path.name}")
+
+    # Step 2: Download background music
+    pbar.set_description("Downloading music")
     music_path = None
     try:
         music_path = download_random_music()
-        print(f"  → Music: {music_path.name}")
+        tqdm.write(f"  -> Music: {music_path.name}")
     except Exception as e:
-        print(f"  → Music download failed (will continue without): {e}")
+        tqdm.write(f"  -> Music download failed (will continue without): {e}")
+    pbar.update(1)
 
-    # Step 2: Extract audio for transcription
-    print("\n[3/7] Extracting audio...")
+    # Step 3: Extract audio for transcription
+    pbar.set_description("Extracting audio")
     audio_path = extract_audio(video_path)
-    print(f"  → Audio: {audio_path.name}")
+    pbar.update(1)
+    tqdm.write(f"  -> Audio: {audio_path.name}")
 
     # Step 4: Transcribe with Groq
-    print("\n[4/7] Transcribing with Groq (Whisper)...")
+    pbar.set_description("Transcribing")
     transcript = transcribe_audio(audio_path)
-    print(f"  → Transcript length: {len(transcript)} chars")
+    pbar.update(1)
+    tqdm.write(f"  -> Transcript length: {len(transcript)} chars")
 
     # Save transcript for reference
     transcript_path = DOWNLOADS_DIR / f"{video_path.stem}_transcript.txt"
     transcript_path.write_text(transcript, encoding="utf-8")
 
     # Step 5: Select best clips
-    print("\n[5/7] Selecting best clips (Heuristic)...")
-    # Pass video_path so heuristic mode can calculate duration
+    pbar.set_description("Selecting clips")
     clips = select_best_clips(transcript, video_title, video_path=video_path)
-    print(f"  → Found {len(clips)} clips")
-    for c in clips:
-        print(f"     Clip {c['clip_number']}: {c['start_time']} → {c['end_time']} | {c['title']}")
+    pbar.update(1)
+    pbar.close()
 
-    # Step 6 & 7: For each clip, generate voiceover and mix
+    tqdm.write(f"  -> Found {len(clips)} clips")
+    for c in clips:
+        tqdm.write(f"     Clip {c['clip_number']}: {c['start_time']} -> {c['end_time']} | {c['title']}")
+
+    # Process each clip with its own progress bar
     final_outputs = []
     clips_metadata = []
-    for clip_data in clips:
+
+    for clip_data in tqdm(clips, desc="Processing clips", unit="clip", ncols=80):
         clip_num = clip_data["clip_number"]
         start = timestamp_to_seconds(clip_data["start_time"])
         end = timestamp_to_seconds(clip_data["end_time"])
 
-        # Cut clip from video
-        print(f"\n[6/7] Processing clip {clip_num}...")
-        clip_path = cut_clip(video_path, start, end, clip_num)
+        # Sub-progress for clip processing (4 steps per clip)
+        clip_steps = ["Cutting", "Voiceover script", "Voiceover audio", "Mixing", "Metadata"]
+        clip_pbar = tqdm(total=len(clip_steps), desc=f"Clip {clip_num}", unit="step", ncols=80, leave=False)
 
-        # Get transcript segment for this clip (approximate from the full transcript)
+        # Cut clip from video
+        clip_pbar.set_description(f"Clip {clip_num}: Cutting")
+        clip_path = cut_clip(video_path, start, end, clip_num)
+        clip_pbar.update(1)
+
+        # Get transcript segment for this clip
         clip_transcript = clip_data.get("hook", "") + " " + clip_data.get("reason", "")
 
         # Generate voiceover script
+        clip_pbar.set_description(f"Clip {clip_num}: Script")
         vo_script = generate_voiceover_script(clip_transcript, clip_data["title"], video_title)
-        print(f"  → Voiceover script: {vo_script[:80]}...")
+        clip_pbar.update(1)
 
         # Save script for reference
         script_path = CLIPS_DIR / f"script_{clip_num}.txt"
         script_path.write_text(vo_script, encoding="utf-8")
 
         # Generate voiceover audio
+        clip_pbar.set_description(f"Clip {clip_num}: TTS")
         vo_audio_path = CLIPS_DIR / f"voiceover_{clip_num}.mp3"
         generate_voiceover_audio(vo_script, vo_audio_path)
+        clip_pbar.update(1)
 
         # Mix voiceover + background music with clip
-        print(f"\n[7/8] Mixing final clip {clip_num}...")
+        clip_pbar.set_description(f"Clip {clip_num}: Mixing")
         final_path = mix_voiceover(clip_path, vo_audio_path, music_path, clip_num)
         final_outputs.append(final_path)
+        clip_pbar.update(1)
 
-        # Generate YouTube metadata (title, description, tags)
-        print(f"\n[8/8] Generating YouTube metadata for clip {clip_num}...")
+        # Generate YouTube metadata
+        clip_pbar.set_description(f"Clip {clip_num}: Metadata")
         try:
             yt_meta = generate_youtube_metadata(
                 clip_data.get("title", f"Clip {clip_num}"),
@@ -103,13 +134,14 @@ def process_video(video_url: str, video_title: str = "Unknown"):
                 video_title,
             )
         except Exception as e:
-            print(f"  → Metadata generation failed, using defaults: {e}")
+            tqdm.write(f"  -> Metadata generation failed, using defaults: {e}")
             yt_meta = {
                 "title": clip_data.get("title", f"Clip {clip_num}"),
                 "description": f"#shorts #roblox #gaming",
                 "tags": ["roblox", "gaming", "shorts", "clips"],
             }
-        print(f"  → YT Title: {yt_meta.get('title', '')[:60]}")
+        clip_pbar.update(1)
+        clip_pbar.close()
 
         clips_metadata.append({
             "clip_number": clip_num,
@@ -118,7 +150,7 @@ def process_video(video_url: str, video_title: str = "Unknown"):
             "tags": yt_meta.get("tags", []),
             "hook": clip_data.get("hook", ""),
         })
-        print(f"  → Output: {final_path.name}")
+        tqdm.write(f"  -> Clip {clip_num} done: {final_path.name}")
 
     # Cleanup temp files
     cleanup_temp_files()
