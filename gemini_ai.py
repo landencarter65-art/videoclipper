@@ -40,6 +40,12 @@ def select_best_clips(transcript: str, video_title: str, video_path: Path = None
     """Use Groq (Llama 3) to pick the most engaging clips from the transcript."""
     print("[AI-Groq] Analyzing transcript for best clips...")
 
+    # Truncate transcript to ~8K tokens (~20K chars) to stay under Groq's 12K TPM limit
+    MAX_TRANSCRIPT_CHARS = 20000
+    if len(transcript) > MAX_TRANSCRIPT_CHARS:
+        print(f"[AI-Groq] Transcript too long ({len(transcript)} chars), truncating to {MAX_TRANSCRIPT_CHARS} chars")
+        transcript = transcript[:MAX_TRANSCRIPT_CHARS] + "\n... [TRANSCRIPT TRUNCATED]"
+
     prompt = f"""You are a viral video editor. Analyze this transcript from the video titled "{video_title}".
 
 TRANSCRIPT:
