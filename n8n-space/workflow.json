@@ -207,6 +207,15 @@
                 "type": "string",
                 "operation": "equals"
               }
+            },
+            {
+              "id": "has-clips",
+              "leftValue": "={{ $json.clips.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "larger"
+              }
             }
           ],
           "combinator": "and"

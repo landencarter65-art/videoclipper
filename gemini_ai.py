@@ -88,7 +88,21 @@ Return ONLY valid JSON (no markdown, no code blocks), an array of objects:
         if all(k.isdigit() or k.startswith("clip") for k in data.keys()):
             return list(data.values())
             
-    return data if isinstance(data, list) else []
+    data = data if isinstance(data, list) else []
+    
+    # Fallback: If AI fails to find clips, pick a random segment from the first 5 mins
+    if not data:
+        print("[AI-Groq] [WARN] AI returned no clips, using fallback segment.")
+        data = [{
+            "clip_number": 1,
+            "start_time": "00:10",
+            "end_time": "00:55",
+            "title": video_title[:50],
+            "reason": "AI fallback selection",
+            "hook": "Check this out!"
+        }]
+            
+    return data
 
 
 def generate_voiceover_script(clip_transcript: str, clip_title: str, video_title: str) -> str:
