@@ -97,10 +97,6 @@ def process_video(video_url: str, video_title: str = "Unknown", progress_callbac
         start = timestamp_to_seconds(clip_data["start_time"])
         end = timestamp_to_seconds(clip_data["end_time"])
 
-        # Cut clip from video
-        clip_path = cut_clip(video_path, start, end, clip_num)
-        step_progress(f"Clip {clip_num}: Cut video")
-
         # Get transcript segment for this clip
         clip_transcript = clip_data.get("hook", "") + " " + clip_data.get("reason", "")
 
@@ -112,16 +108,33 @@ def process_video(video_url: str, video_title: str = "Unknown", progress_callbac
         script_path = CLIPS_DIR / f"script_{clip_num}.txt"
         script_path.write_text(vo_script, encoding="utf-8")
 
-        # Generate voiceover audio (also extracts word timings for subtitles)
+        # Generate voiceover audio FIRST to get duration and word timings
         vo_audio_path = CLIPS_DIR / f"voiceover_{clip_num}.mp3"
         _, word_timings = generate_voiceover_audio(vo_script, vo_audio_path)
         step_progress(f"Clip {clip_num}: Generated voiceover ({len(word_timings)} words)")
+
+        # Calculate required clip duration: voiceover duration + 2s delay + 1s buffer
+        if word_timings:
+            vo_duration_ms = word_timings[-1]["end_ms"]
+            required_duration = (vo_duration_ms / 1000) + 2 + 1  # voiceover + delay + buffer
+        else:
+            required_duration = end - start
+
+        # Extend clip end time if voiceover is longer than the selected clip
+        original_duration = end - start
+        if required_duration > original_duration:
+            print(f"[CLIP] Extending clip from {original_duration:.1f}s to {required_duration:.1f}s to fit voiceover")
+            end = start + required_duration
+
+        # Cut clip from video (now with correct duration for voiceover)
+        clip_path = cut_clip(video_path, start, end, clip_num)
+        step_progress(f"Clip {clip_num}: Cut video ({end - start:.1f}s)")
 
         # Mix voiceover + background music with clip
         mixed_path = mix_voiceover(clip_path, vo_audio_path, music_path, clip_num)
         step_progress(f"Clip {clip_num}: Mixed audio")
 
-        # Add TikTok-style subtitles (word-by-word highlighting synced to voiceover)
+        # Add TikTok-style subtitles (word-by-word synced to voiceover)
         final_path = add_subtitles(mixed_path, vo_script, clip_num, word_timings=word_timings)
         final_outputs.append(final_path)
         step_progress(f"Clip {clip_num}: Added subtitles")

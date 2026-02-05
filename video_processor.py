@@ -130,7 +130,7 @@ def ms_to_ass_time(ms: int) -> str:
 def generate_ass_subtitles(word_timings: List[dict], output_path: Path,
                            voiceover_delay_ms: int = 2000) -> Path:
     """
-    Generate TikTok-style ASS subtitles with word-by-word highlighting.
+    Generate TikTok-style ASS subtitles with word-by-word display.
 
     Args:
         word_timings: List of {"word": str, "start_ms": int, "end_ms": int}
@@ -140,9 +140,10 @@ def generate_ass_subtitles(word_timings: List[dict], output_path: Path,
     Returns:
         Path to the generated .ass file
     """
-    # ASS Header with TikTok-style formatting
-    # Resolution matches 9:16 vertical video (720x1280)
-    # Style: Bold Arial, large font, yellow highlight, white default, black outline
+    # ASS Header - TikTok/CapCut style
+    # BorderStyle=4 creates opaque background box
+    # BackColour=&HCC653519 is a nice blue/purple pill background (BGR format with alpha)
+    # Alignment=8 is top-center, we use 5 for dead center
     ass_header = """[Script Info]
 ScriptType: v4.00+
 PlayResX: 720
@@ -151,41 +152,31 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,52,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,4,2,8,20,20,400,1
+Style: Default,Arial Black,58,&H00FFFFFF,&H000000FF,&H00000000,&HCC8B4513,1,0,0,0,100,100,0,0,4,0,0,5,20,20,100,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
     dialogues = []
-    words_per_group = 4  # Show 4 words at a time for readability
 
-    for i, timing in enumerate(word_timings):
-        # Calculate which words to show (context window)
-        # Show current word + some before and after
-        group_start = max(0, i - 1)  # 1 word before
-        group_end = min(len(word_timings), i + words_per_group - 1)  # words after
+    # Group words into chunks of 2-3 for clean display
+    i = 0
+    while i < len(word_timings):
+        # Take 2-3 words at a time
+        chunk_end = min(i + 2, len(word_timings))
 
-        # Build display text with yellow highlighting on current word
-        display_words = []
-        for j in range(group_start, group_end):
-            word = word_timings[j]["word"]
-            if j == i:
-                # Highlighted word: Yellow color (&H00FFFF in BGR = Yellow)
-                display_words.append(f"{{\\c&H00FFFF&}}{word}{{\\c&HFFFFFF&}}")
-            else:
-                # Normal word: White
-                display_words.append(word)
+        # Get the words for this chunk
+        chunk_words = [word_timings[j]["word"] for j in range(i, chunk_end)]
+        display_text = " ".join(chunk_words).upper()  # Uppercase for impact
 
-        display_text = " ".join(display_words)
+        # Timing: start of first word to end of last word in chunk
+        start_ms = word_timings[i]["start_ms"] + voiceover_delay_ms
+        end_ms = word_timings[chunk_end - 1]["end_ms"] + voiceover_delay_ms
 
-        # Add voiceover delay to timestamps
-        start_ms = timing["start_ms"] + voiceover_delay_ms
-        end_ms = timing["end_ms"] + voiceover_delay_ms
-
-        # Ensure minimum display time (at least 100ms per word)
-        if end_ms - start_ms < 100:
-            end_ms = start_ms + 100
+        # Ensure minimum display time
+        if end_ms - start_ms < 200:
+            end_ms = start_ms + 200
 
         start_time = ms_to_ass_time(start_ms)
         end_time = ms_to_ass_time(end_ms)
@@ -193,11 +184,13 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         dialogue = f"Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{display_text}"
         dialogues.append(dialogue)
 
+        i = chunk_end
+
     # Write ASS file
     ass_content = ass_header + "\n".join(dialogues)
     output_path.write_text(ass_content, encoding="utf-8")
 
-    print(f"[SUBTITLES] Generated ASS with {len(dialogues)} word events")
+    print(f"[SUBTITLES] Generated ASS with {len(dialogues)} caption groups")
     return output_path
 
 
@@ -246,14 +239,15 @@ def add_subtitles(video_path: Path, subtitle_text: str, clip_index: int,
     # Strategy 2: Simple SRT fallback (existing method)
     try:
         print(f"[FFMPEG] Burning simple subtitles for clip {clip_index}")
-        clean_text = subtitle_text.replace("\n", " ").replace("\"", "'").strip()
+        clean_text = subtitle_text.replace("\n", " ").replace("\"", "'").strip().upper()
 
         srt_path = CLIPS_DIR / f"sub_{clip_index}.srt"
         srt_content = f"1\n00:00:02,000 --> 00:01:30,000\n{clean_text}\n"
         srt_path.write_text(srt_content, encoding="utf-8")
 
         srt_escaped = str(srt_path).replace("\\", "/").replace(":", "\\:")
-        style = "FontSize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=3,Bold=1,Alignment=8,MarginV=400,BorderStyle=1"
+        # Clean style with background box
+        style = "Fontname=Arial Black,FontSize=58,PrimaryColour=&H00FFFFFF,BackColour=&HCC8B4513,Bold=1,Alignment=5,MarginV=100,BorderStyle=4"
 
         cmd = [
             "ffmpeg", "-y",
