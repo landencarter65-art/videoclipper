@@ -76,33 +76,43 @@ Return ONLY valid JSON (no markdown, no code blocks), an array of objects:
     )
 
     text = response.choices[0].message.content.strip()
-    data = json.loads(text)
+    try:
+        data = json.loads(text)
+    except Exception as e:
+        print(f"[AI-Groq] Error parsing JSON: {e}")
+        data = []
     
-    # Handle both wrapped and direct array responses
-    if isinstance(data, dict):
+    # Extract list from various possible JSON structures
+    clips_list = []
+    if isinstance(data, list):
+        clips_list = data
+    elif isinstance(data, dict):
         if "clips" in data:
-            return data["clips"]
-        if "segments" in data:
-            return data["segments"]
-        # If the LLM returned a dict with keys like "1", "2", "3"
-        if all(k.isdigit() or k.startswith("clip") for k in data.keys()):
-            return list(data.values())
-            
-    data = data if isinstance(data, list) else []
-    
-    # Fallback: If AI fails to find clips, pick a random segment from the first 5 mins
-    if not data:
-        print("[AI-Groq] [WARN] AI returned no clips, using fallback segment.")
-        data = [{
+            clips_list = data["clips"]
+        elif "segments" in data:
+            clips_list = data["segments"]
+        elif all(k.isdigit() or k.startswith("clip") for k in data.keys()):
+            clips_list = list(data.values())
+        else:
+            # If it's a single clip object
+            if "start_time" in data and "end_time" in data:
+                clips_list = [data]
+            else:
+                clips_list = []
+
+    # Final Fallback: If AI fails to find clips, pick a segment from the middle
+    if not clips_list:
+        print("[AI-Groq] [WARN] AI returned no valid clips, using robust fallback.")
+        clips_list = [{
             "clip_number": 1,
-            "start_time": "00:10",
-            "end_time": "00:55",
+            "start_time": "00:15",
+            "end_time": "01:05",
             "title": video_title[:50],
             "reason": "AI fallback selection",
-            "hook": "Check this out!"
+            "hook": "You need to see this!"
         }]
             
-    return data
+    return clips_list[:NUM_CLIPS]
 
 
 def generate_voiceover_script(clip_transcript: str, clip_title: str, video_title: str) -> str:
