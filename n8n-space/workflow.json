@@ -200,7 +200,7 @@
           "conditions": [
             {
               "id": "is-done",
-              "leftValue": "={{ $json.status }}",
+              "leftValue": "={{ $('Poll Job Status').item.json.status }}",
               "rightValue": "completed",
               "operator": {
                 "type": "string",
