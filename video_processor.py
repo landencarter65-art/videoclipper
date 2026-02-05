@@ -13,15 +13,19 @@ from config import (
 
 
 def cut_clip(video_path: Path, start_seconds: float, end_seconds: float, clip_index: int) -> Path:
-    """Extract a clip from the video using ffmpeg."""
+    """Extract a clip from the video using ffmpeg and convert to 9:16 vertical."""
     output_path = CLIPS_DIR / f"clip_{clip_index}.mp4"
     duration = end_seconds - start_seconds
+
+    # 9:16 Crop: Width = Height * 9/16. Then scale to 720x1280.
+    vf = "crop=ih*9/16:ih,scale=720:1280"
 
     cmd = [
         "ffmpeg", "-y",
         "-ss", str(start_seconds),
         "-i", str(video_path),
         "-t", str(duration),
+        "-vf", vf,
         "-c:v", VIDEO_CODEC,
         "-crf", VIDEO_CRF,
         "-preset", VIDEO_PRESET,
@@ -30,7 +34,7 @@ def cut_clip(video_path: Path, start_seconds: float, end_seconds: float, clip_in
         str(output_path),
     ]
 
-    print(f"[FFMPEG] Cutting clip {clip_index}: {start_seconds}s → {end_seconds}s")
+    print(f"[FFMPEG] Cutting 9:16 clip {clip_index}: {start_seconds}s → {end_seconds}s")
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(f"ffmpeg cut failed: {result.stderr[-500:]}")
@@ -40,7 +44,7 @@ def cut_clip(video_path: Path, start_seconds: float, end_seconds: float, clip_in
 
 def mix_voiceover(clip_path: Path, voiceover_path: Path, music_path: Path | None, clip_index: int) -> Path:
     """Mix original clip audio (lowered) + voiceover + background music."""
-    output_path = OUTPUT_DIR / f"final_clip_{clip_index}.mp4"
+    output_path = CLIPS_DIR / f"mixed_{clip_index}.mp4"
 
     # Get duration of the clip to calculate fade out
     try:
@@ -112,21 +116,26 @@ def mix_voiceover(clip_path: Path, voiceover_path: Path, music_path: Path | None
 
 
 def add_subtitles(video_path: Path, subtitle_text: str, clip_index: int) -> Path:
-    """Burn subtitles onto the video (optional enhancement)."""
-    # Write subtitle to temp SRT file
+    """Burn subtitles onto the video."""
+    # Clean text: replace newlines with spaces and limit length
+    clean_text = subtitle_text.replace("\n", " ").replace("\"", "'").strip()
+    
+    # Write subtitle to temp SRT file (show for 90 seconds to cover clip)
     srt_path = CLIPS_DIR / f"sub_{clip_index}.srt"
-    srt_content = f"1\n00:00:02,000 --> 00:01:30,000\n{subtitle_text}\n"
+    srt_content = f"1\n00:00:00,500 --> 00:01:30,000\n{clean_text}\n"
     srt_path.write_text(srt_content, encoding="utf-8")
 
-    output_path = OUTPUT_DIR / f"final_sub_clip_{clip_index}.mp4"
+    output_path = OUTPUT_DIR / f"final_clip_{clip_index}.mp4"
 
-    # Use ffmpeg subtitles filter — escape path for Windows
+    # Use ffmpeg subtitles filter — style for 9:16 vertical
+    # Alignment 2 = Bottom Center, MarginV=100 raises it slightly
     srt_escaped = str(srt_path).replace("\\", "/").replace(":", "\\:")
+    style = "FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Bold=1,Alignment=2,MarginV=80,BorderStyle=1"
 
     cmd = [
         "ffmpeg", "-y",
         "-i", str(video_path),
-        "-vf", f"subtitles='{srt_escaped}':force_style='FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Bold=1'",
+        "-vf", f"subtitles='{srt_escaped}':force_style='{style}'",
         "-c:v", VIDEO_CODEC,
         "-crf", VIDEO_CRF,
         "-preset", VIDEO_PRESET,
@@ -134,7 +143,7 @@ def add_subtitles(video_path: Path, subtitle_text: str, clip_index: int) -> Path
         str(output_path),
     ]
 
-    print(f"[FFMPEG] Adding subtitles to clip {clip_index}")
+    print(f"[FFMPEG] Burning subtitles for clip {clip_index}")
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         print(f"[WARN] Subtitle burn failed (non-critical): {result.stderr[-200:]}")

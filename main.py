@@ -118,9 +118,13 @@ def process_video(video_url: str, video_title: str = "Unknown", progress_callbac
         step_progress(f"Clip {clip_num}: Generated voiceover")
 
         # Mix voiceover + background music with clip
-        final_path = mix_voiceover(clip_path, vo_audio_path, music_path, clip_num)
-        final_outputs.append(final_path)
+        mixed_path = mix_voiceover(clip_path, vo_audio_path, music_path, clip_num)
         step_progress(f"Clip {clip_num}: Mixed audio")
+        
+        # Add subtitles (using the voiceover script as text)
+        final_path = add_subtitles(mixed_path, vo_script, clip_num)
+        final_outputs.append(final_path)
+        step_progress(f"Clip {clip_num}: Added subtitles")
         
         gc.collect()
 
