@@ -259,6 +259,7 @@
     {
       "parameters": {
         "resource": "video",
+        "operation": "upload",
         "title": "={{ $('Split Clips').item.json.title }}",
         "categoryId": "20",
         "options": {
