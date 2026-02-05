@@ -231,7 +231,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ $env.CLIPPER_API_URL }}{{ $json.download_url }}",
+        "url": "={{ $env.CLIPPER_API_URL }}{{ $('Poll Job Status').item.json.clips[0].download_url }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -260,12 +260,12 @@
       "parameters": {
         "resource": "video",
         "operation": "upload",
-        "title": "={{ $('Split Clips').item.json.title }}",
+        "title": "={{ $('Poll Job Status').item.json.clips[0].title }}",
         "categoryId": "20",
         "options": {
-          "description": "={{ $('Split Clips').item.json.description }}",
+          "description": "={{ $('Poll Job Status').item.json.clips[0].description }}",
           "privacyStatus": "public",
-          "tags": "={{ $('Split Clips').item.json.tags.join(',') }}"
+          "tags": "={{ $('Poll Job Status').item.json.clips[0].tags.join(',') }}"
         }
       },
       "id": "node-youtube-upload",
@@ -445,7 +445,7 @@
       "main": [
         [
           {
-            "node": "Split Clips",
+            "node": "Download Clip",
             "type": "main",
             "index": 0
           }
@@ -453,17 +453,6 @@
         [
           {
             "node": "Wait 60s",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Split Clips": {
-      "main": [
-        [
-          {
-            "node": "Download Clip",
             "type": "main",
             "index": 0
           }
