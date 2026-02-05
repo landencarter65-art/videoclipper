@@ -38,8 +38,14 @@ class ProcessRequest(BaseModel):
 
 def _run_job(job_id: str, url: str, title: str):
     """Background worker that runs the pipeline and updates job status."""
+
+    def progress_callback(percent: int, step: str):
+        """Update job progress."""
+        jobs[job_id]["progress"] = percent
+        jobs[job_id]["current_step"] = step
+
     try:
-        result = process_video(url, title)
+        result = process_video(url, title, progress_callback=progress_callback)
         clips = []
         for i, file_path in enumerate(result["files"]):
             meta = result["clips_metadata"][i] if i < len(result["clips_metadata"]) else {}
@@ -52,6 +58,8 @@ def _run_job(job_id: str, url: str, title: str):
                 "hook": meta.get("hook", ""),
             })
         jobs[job_id]["status"] = "completed"
+        jobs[job_id]["progress"] = 100
+        jobs[job_id]["current_step"] = "Done!"
         jobs[job_id]["clips"] = clips
     except Exception as e:
         jobs[job_id]["status"] = "failed"
@@ -181,12 +189,18 @@ async def start_processing(req: ProcessRequest):
         raise HTTPException(409, "Another job is already running. Wait for it to finish.")
 
     job_id = str(uuid.uuid4())[:8]
-    jobs[job_id] = {"status": "processing", "clips": [], "error": None}
+    jobs[job_id] = {
+        "status": "processing",
+        "progress": 0,
+        "current_step": "Starting...",
+        "clips": [],
+        "error": None
+    }
 
     thread = threading.Thread(target=_run_job, args=(job_id, req.url.strip(), req.title.strip()), daemon=True)
     thread.start()
 
-    return {"job_id": job_id, "status": "processing"}
+    return {"job_id": job_id, "status": "processing", "progress": 0}
 
 
 @app.get("/job/{job_id}", dependencies=[Depends(verify_auth)])

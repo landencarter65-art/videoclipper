@@ -183,6 +183,16 @@
     },
     {
       "parameters": {
+        "jsCode": "// Display progress percentage\nconst data = $input.first().json;\nconst progress = data.progress || 0;\nconst step = data.current_step || 'Working...';\nconst status = data.status || 'unknown';\n\nconsole.log(`========================================`);\nconsole.log(`PROGRESS: ${progress}%`);\nconsole.log(`STATUS: ${status}`);\nconsole.log(`STEP: ${step}`);\nconsole.log(`========================================`);\n\n// Pass through the data\nreturn [{ json: data }];"
+      },
+      "id": "node-show-progress",
+      "name": "Show Progress",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2300, 300]
+    },
+    {
+      "parameters": {
         "conditions": {
           "options": {
             "leftValue": "",
@@ -206,7 +216,7 @@
       "name": "Job Done?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [2300, 300]
+      "position": [2500, 300]
     },
     {
       "parameters": {
@@ -216,7 +226,7 @@
       "name": "Split Clips",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2500, 200]
+      "position": [2700, 200]
     },
     {
       "parameters": {
@@ -244,7 +254,7 @@
       "name": "Download Clip",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2700, 200]
+      "position": [2900, 200]
     },
     {
       "parameters": {
@@ -261,7 +271,7 @@
       "name": "Upload to YouTube",
       "type": "n8n-nodes-base.youTube",
       "typeVersion": 1,
-      "position": [2900, 200],
+      "position": [3100, 200],
       "credentials": {
         "youTubeOAuth2Api": {
           "id": "REPLACE_WITH_CREDENTIAL_ID",
@@ -290,7 +300,7 @@
       "name": "Cleanup Files",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [3100, 200]
+      "position": [3300, 200]
     },
     {
       "parameters": {},
@@ -409,6 +419,17 @@
       ]
     },
     "Poll Job Status": {
+      "main": [
+        [
+          {
+            "node": "Show Progress",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Show Progress": {
       "main": [
         [
           {
