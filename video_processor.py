@@ -130,7 +130,7 @@ def ms_to_ass_time(ms: int) -> str:
 def generate_ass_subtitles(word_timings: List[dict], output_path: Path,
                            voiceover_delay_ms: int = 2000) -> Path:
     """
-    Generate TikTok-style ASS subtitles with word-by-word display.
+    Generate TikTok-style ASS subtitles - ONE word at a time with clean box.
 
     Args:
         word_timings: List of {"word": str, "start_ms": int, "end_ms": int}
@@ -140,10 +140,11 @@ def generate_ass_subtitles(word_timings: List[dict], output_path: Path,
     Returns:
         Path to the generated .ass file
     """
-    # ASS Header - TikTok/CapCut style
-    # BorderStyle=4 creates opaque background box
-    # BackColour=&HCC653519 is a nice blue/purple pill background (BGR format with alpha)
-    # Alignment=8 is top-center, we use 5 for dead center
+    # ASS Header - Clean TikTok/CapCut style
+    # BorderStyle=4 = opaque box background
+    # BackColour=&HBB000000 = semi-transparent black box
+    # Alignment=2 = bottom center (like TikTok)
+    # Large bold font, white text
     ass_header = """[Script Info]
 ScriptType: v4.00+
 PlayResX: 720
@@ -152,7 +153,7 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial Black,58,&H00FFFFFF,&H000000FF,&H00000000,&HCC8B4513,1,0,0,0,100,100,0,0,4,0,0,5,20,20,100,1
+Style: Default,Impact,72,&H00FFFFFF,&H000000FF,&H00000000,&HBB000000,1,0,0,0,100,100,0,0,4,0,0,2,20,20,120,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -160,37 +161,31 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
     dialogues = []
 
-    # Group words into chunks of 2-3 for clean display
-    i = 0
-    while i < len(word_timings):
-        # Take 2-3 words at a time
-        chunk_end = min(i + 2, len(word_timings))
+    # Show ONE word at a time for clean TikTok style
+    for timing in word_timings:
+        word = timing["word"].strip().upper()
+        if not word:
+            continue
 
-        # Get the words for this chunk
-        chunk_words = [word_timings[j]["word"] for j in range(i, chunk_end)]
-        display_text = " ".join(chunk_words).upper()  # Uppercase for impact
+        # Add voiceover delay to timestamps
+        start_ms = timing["start_ms"] + voiceover_delay_ms
+        end_ms = timing["end_ms"] + voiceover_delay_ms
 
-        # Timing: start of first word to end of last word in chunk
-        start_ms = word_timings[i]["start_ms"] + voiceover_delay_ms
-        end_ms = word_timings[chunk_end - 1]["end_ms"] + voiceover_delay_ms
-
-        # Ensure minimum display time
-        if end_ms - start_ms < 200:
-            end_ms = start_ms + 200
+        # Ensure minimum display time (at least 150ms per word)
+        if end_ms - start_ms < 150:
+            end_ms = start_ms + 150
 
         start_time = ms_to_ass_time(start_ms)
         end_time = ms_to_ass_time(end_ms)
 
-        dialogue = f"Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{display_text}"
+        dialogue = f"Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{word}"
         dialogues.append(dialogue)
-
-        i = chunk_end
 
     # Write ASS file
     ass_content = ass_header + "\n".join(dialogues)
     output_path.write_text(ass_content, encoding="utf-8")
 
-    print(f"[SUBTITLES] Generated ASS with {len(dialogues)} caption groups")
+    print(f"[SUBTITLES] Generated ASS with {len(dialogues)} words")
     return output_path
 
 
@@ -246,8 +241,8 @@ def add_subtitles(video_path: Path, subtitle_text: str, clip_index: int,
         srt_path.write_text(srt_content, encoding="utf-8")
 
         srt_escaped = str(srt_path).replace("\\", "/").replace(":", "\\:")
-        # Clean style with background box
-        style = "Fontname=Arial Black,FontSize=58,PrimaryColour=&H00FFFFFF,BackColour=&HCC8B4513,Bold=1,Alignment=5,MarginV=100,BorderStyle=4"
+        # Clean TikTok style - white text, black box background, bottom center
+        style = "Fontname=Impact,FontSize=72,PrimaryColour=&H00FFFFFF,BackColour=&HBB000000,Bold=1,Alignment=2,MarginV=120,BorderStyle=4"
 
         cmd = [
             "ffmpeg", "-y",
