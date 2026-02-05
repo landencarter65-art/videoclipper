@@ -266,15 +266,23 @@ def download_random_music() -> Path:
 def extract_audio(video_path: Path) -> Path:
     """Extract audio from video for transcription (compressed mp3 for API limits)."""
     audio_path = video_path.with_suffix(".mp3")
+    
+    # -t 1800 limits transcription to the first 30 minutes to stay under API limits
+    # -ab 32k mono is very small but clear enough for Whisper
     cmd = [
         "ffmpeg", "-y",
         "-i", str(video_path),
         "-vn",
+        "-t", "1800",
         "-acodec", "libmp3lame",
-        "-ab", "64k",
+        "-ab", "32k",
         "-ar", "16000",
         "-ac", "1",
         str(audio_path),
     ]
     subprocess.run(cmd, capture_output=True, check=True)
+    
+    size_mb = audio_path.stat().st_size / (1024 * 1024)
+    print(f"[DOWNLOADER] Extracted audio: {size_mb:.2f} MB")
+    
     return audio_path
