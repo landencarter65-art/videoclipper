@@ -20,7 +20,7 @@ from config import DOWNLOADS_DIR, CLIPS_DIR, OUTPUT_DIR, NUM_CLIPS
 from downloader import check_new_videos, download_video, extract_audio, mark_processed, download_random_music
 from gemini_ai import transcribe_audio, select_best_clips, generate_voiceover_script, generate_youtube_metadata, timestamp_to_seconds
 from voiceover import generate_voiceover_audio
-from video_processor import cut_clip, mix_voiceover, cleanup_temp_files
+from video_processor import cut_clip, mix_voiceover, cleanup_temp_files, add_subtitles
 
 
 def process_video(video_url: str, video_title: str = "Unknown", progress_callback=None):
