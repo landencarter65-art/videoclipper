@@ -79,7 +79,12 @@ def select_best_clips(transcript: str, video_title: str, video_path: Path = None
 TRANSCRIPT:
 {transcript}
 
-Find the {NUM_CLIPS} most engaging, viral-worthy segments. Each clip must be {CLIP_MIN_SECONDS}-{CLIP_MAX_SECONDS} seconds long.
+Find the {NUM_CLIPS} most engaging, viral-worthy segments. 
+
+CRITICAL REQUIREMENT: Each clip MUST be between {CLIP_MIN_SECONDS} and {CLIP_MAX_SECONDS} seconds long. 
+- If a great moment is only 10 seconds, EXPAND the start and end times to capture the surrounding context until you have at least {CLIP_MIN_SECONDS} seconds.
+- Do NOT return clips shorter than {CLIP_MIN_SECONDS} seconds.
+- Clips must be strictly under 60 seconds.
 
 Look for moments that are:
 - Emotionally intense or surprising

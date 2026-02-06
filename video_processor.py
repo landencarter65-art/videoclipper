@@ -90,7 +90,6 @@ def mix_voiceover(clip_path: Path, voiceover_path: Path, music_path: Path | None
             "-c:v", "copy",
             "-c:a", "aac",
             "-b:a", AUDIO_BITRATE,
-            "-shortest",
             str(output_path),
         ]
     else:
@@ -110,7 +109,6 @@ def mix_voiceover(clip_path: Path, voiceover_path: Path, music_path: Path | None
             "-c:v", "copy",
             "-c:a", "aac",
             "-b:a", AUDIO_BITRATE,
-            "-shortest",
             str(output_path),
         ]
 
