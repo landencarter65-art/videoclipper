@@ -20,6 +20,7 @@ def cut_clip(video_path: Path, start_seconds: float, end_seconds: float, clip_in
 
     # 9:16 Crop + cinematic effects chain:
     # Tone down the drift slightly (from 29/51 to 15/25)
+    fade_out = max(0, duration - 0.5)
     vf = (
         "crop=ih*9/16:ih,"
         "scale=778:1382,"
