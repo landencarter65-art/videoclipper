@@ -12,6 +12,7 @@ Usage:
 import argparse
 import sys
 import gc
+import shutil
 from pathlib import Path
 
 from tqdm import tqdm
@@ -20,7 +21,7 @@ from config import DOWNLOADS_DIR, CLIPS_DIR, OUTPUT_DIR, NUM_CLIPS
 from downloader import check_new_videos, download_video, extract_audio, mark_processed, download_random_music
 from gemini_ai import transcribe_audio, select_best_clips, generate_voiceover_script, generate_youtube_metadata, timestamp_to_seconds
 from voiceover import generate_voiceover_audio
-from video_processor import cut_clip, mix_voiceover, cleanup_temp_files
+from video_processor import cut_clip, mix_voiceover, add_subtitles, cleanup_temp_files
 
 
 def process_video(video_url: str, video_title: str = "Unknown", progress_callback=None):
@@ -132,9 +133,22 @@ def process_video(video_url: str, video_title: str = "Unknown", progress_callbac
 
         # Mix voiceover + background music with clip
         mixed_path = mix_voiceover(clip_path, vo_audio_path, music_path, clip_num)
-        final_path = mixed_path
+        
+        # Burn subtitles (this also moves the file to OUTPUT_DIR)
+        try:
+            final_path = add_subtitles(mixed_path, vo_script, clip_num, word_timings)
+            # Ensure it's in OUTPUT_DIR even if add_subtitles returned the input path
+            if final_path.parent != OUTPUT_DIR:
+                dest = OUTPUT_DIR / f"clip_{clip_num}.mp4"
+                shutil.copy(final_path, dest)
+                final_path = dest
+        except Exception as e:
+            print(f"  -> Subtitle burn failed: {e}")
+            final_path = OUTPUT_DIR / f"clip_{clip_num}.mp4"
+            shutil.copy(mixed_path, final_path)
+
         final_outputs.append(final_path)
-        step_progress(f"Clip {clip_num}: Mixed audio")
+        step_progress(f"Clip {clip_num}: Mixed audio & subtitles")
         
         gc.collect()
 

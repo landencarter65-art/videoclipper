@@ -75,6 +75,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 # ... (rest of imports)
 
 @app.get("/", response_class=HTMLResponse)
+@app.head("/")
 async def root():
     return """
     <!DOCTYPE html>
