@@ -163,7 +163,6 @@ Style: Default,Impact,52,&H0000FFFF,&H000000FF,&H00000000,&HBB000000,1,0,0,0,100
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-"""
 
     dialogues = []
 
