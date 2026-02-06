@@ -19,23 +19,13 @@ def cut_clip(video_path: Path, start_seconds: float, end_seconds: float, clip_in
     duration = end_seconds - start_seconds
 
     # 9:16 Crop + cinematic effects chain:
-    # 1. Crop to 9:16 aspect ratio
-    # 2. Scale to 108% (778x1382) for slow zoom headroom
-    # 3. Animated crop back to 720x1280 with:
-    #    - Ken Burns slow zoom (drift toward center via pow curve)
-    #    - Speed ramp illusion (pow(t/dur, 0.7) = fast start, slow end)
-    #    - Shake/pulse at voiceover start (~2s mark, sin/cos oscillation)
-    # 4. Color grading (contrast + saturation + brightness boost)
-    # 5. Vignette (dark edges, draws focus to center)
-    # 6. Fade in/out transitions
-    fade_out = max(0, duration - 0.5)
-
+    # Tone down the drift slightly (from 29/51 to 15/25)
     vf = (
         "crop=ih*9/16:ih,"
         "scale=778:1382,"
         f"crop=720:1280"
-        f":'29*pow(t/{duration},0.7)+between(t,1.8,2.5)*3*sin(25*t)'"
-        f":'51*pow(t/{duration},0.7)+between(t,1.8,2.5)*3*cos(20*t)',"
+        f":'15*pow(t/{duration},0.7)+between(t,1.8,2.5)*3*sin(25*t)'"
+        f":'25*pow(t/{duration},0.7)+between(t,1.8,2.5)*3*cos(20*t)',"
         "eq=contrast=1.1:saturation=1.3:brightness=0.02,"
         "vignette=PI/5,"
         f"fade=in:st=0:d=0.5,fade=out:st={fade_out}:d=0.5"
@@ -257,8 +247,21 @@ def add_subtitles(video_path: Path, subtitle_text: str, clip_index: int,
         srt_path.write_text(srt_content, encoding="utf-8")
 
         srt_escaped = str(srt_path).replace("\\", "/").replace(":", "\\:")
-        # Clean TikTok style - white text, black box background, bottom center
-        style = "Fontname=Impact,FontSize=72,PrimaryColour=&H00FFFFFF,BackColour=&HBB000000,Bold=1,Alignment=2,MarginV=120,BorderStyle=4"
+        # Clean TikTok style - white text, black box background, top center
+        # Alignment=8 is top center, MarginV=100 from top
+        style = "Fontname=Impact,FontSize=54,PrimaryColour=&H00FFFFFF,BackColour=&HBB000000,Bold=1,Alignment=8,MarginV=100,BorderStyle=4"
+
+        # Split text into chunks of ~5 words for better readability in fallback
+        words = clean_text.split()
+        chunks = [" ".join(words[i:i+5]) for i in range(0, len(words), 5)]
+        srt_lines = []
+        for i, chunk in enumerate(chunks):
+            start_t = i * 4
+            end_t = (i + 1) * 4
+            srt_lines.append(f"{i+1}\n00:00:{start_t:02d},000 --> 00:00:{end_t:02d},000\n{chunk}\n")
+        
+        srt_content = "\n".join(srt_lines)
+        srt_path.write_text(srt_content, encoding="utf-8")
 
         cmd = [
             "ffmpeg", "-y",

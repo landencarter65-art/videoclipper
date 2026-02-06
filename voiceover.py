@@ -27,14 +27,15 @@ async def _generate_tts_with_timing(text: str, output_path: Path) -> List[dict]:
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
                 audio_file.write(chunk["data"])
-            elif chunk["type"] == "WordBoundary":
+            elif chunk["type"] in ["WordBoundary", "word_boundary"]:
                 # Extract timing - offset and duration are in 100-nanosecond units
-                start_ms = chunk["offset"] // 10000  # Convert to milliseconds
-                duration_ms = chunk["duration"] // 10000
+                # Some versions of edge-tts use different casing
+                start_ms = chunk.get("offset", 0) // 10000  # Convert to milliseconds
+                duration_ms = chunk.get("duration", 0) // 10000
                 end_ms = start_ms + duration_ms
 
                 word_timings.append({
-                    "word": chunk["text"],
+                    "word": chunk.get("text", ""),
                     "start_ms": start_ms,
                     "end_ms": end_ms,
                 })
