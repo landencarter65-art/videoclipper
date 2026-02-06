@@ -1,49 +1,49 @@
 import json
 import time
 import os
+import random
 from pathlib import Path
 from groq import Groq
 import google.generativeai as genai
 from config import GROQ_API_KEY, GROQ_MODEL, WHISPER_MODEL, NUM_CLIPS, CLIP_MIN_SECONDS, CLIP_MAX_SECONDS, GEMINI_API_KEY, GEMINI_MODEL
 
-# ── Init Clients ────────────────────────────────────────────
-client = None
+# ── Groq Client ─────────────────────────────────────────────
+groq_client = None
 if GROQ_API_KEY:
-    client = Groq(api_key=GROQ_API_KEY)
+    groq_client = Groq(api_key=GROQ_API_KEY)
 else:
-    print("[WARNING] GROQ_API_KEY not set — Transcription features will fail.")
+    print("[WARNING] GROQ_API_KEY not set — Groq features will fail.")
 
+# ── Gemini Client ───────────────────────────────────────────
+gemini_configured = False
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
+    gemini_configured = True
 else:
-    print("[WARNING] GEMINI_API_KEY not set — Text generation features will fail.")
+    print("[WARNING] GEMINI_API_KEY not set — Gemini features will fail.")
 
 
-def call_gemini(prompt: str, json_mode: bool = False) -> str:
-    """Helper to call Gemini API."""
-    try:
-        model = genai.GenerativeModel(GEMINI_MODEL)
-        
-        generation_config = {}
-        if json_mode:
-            generation_config["response_mime_type"] = "application/json"
-            
-        response = model.generate_content(
-            prompt,
-            generation_config=generation_config
-        )
-        return response.text.strip()
-    except Exception as e:
-        print(f"[AI-Gemini] Error: {e}")
-        return "{}" if json_mode else ""
+def _get_provider() -> str:
+    """Randomly select between 'groq' and 'gemini' (50/50) if both are available."""
+    if groq_client and gemini_configured:
+        return random.choice(["groq", "gemini"])
+    elif groq_client:
+        return "groq"
+    elif gemini_configured:
+        return "gemini"
+    else:
+        return "none"
 
 
 def transcribe_audio(audio_path: Path) -> str:
     """Use Groq's Whisper-large-v3 to get a timestamped transcript."""
+    if not groq_client:
+        raise RuntimeError("GROQ_API_KEY required for transcription (Whisper).")
+
     print(f"[AI-Groq] Transcribing audio with Whisper: {audio_path.name}")
     
     with open(audio_path, "rb") as file:
-        transcription = client.audio.transcriptions.create(
+        transcription = groq_client.audio.transcriptions.create(
             file=(audio_path.name, file),
             model=WHISPER_MODEL,
             response_format="verbose_json",
@@ -63,14 +63,15 @@ def transcribe_audio(audio_path: Path) -> str:
 
 
 def select_best_clips(transcript: str, video_title: str, video_path: Path = None) -> list[dict]:
-    """Use Gemini to pick the most engaging clips from the transcript."""
-    print("[AI-Gemini] Analyzing transcript for best clips...")
+    """Pick the most engaging clips using either Groq (Llama 3) or Gemini (Flash)."""
+    provider = _get_provider()
+    print(f"[AI-{provider.title()}] Analyzing transcript for best clips...")
 
-    # Gemini Flash has a large context window (1M tokens), so less aggressive truncation is needed
-    # But we'll keep a safe limit just in case
-    MAX_TRANSCRIPT_CHARS = 100000 
+    # Truncate transcript to ~8K tokens (~20K chars) to stay under Groq's 12K TPM limit
+    # Gemini Flash has a huge context window, but we keep it consistent for now.
+    MAX_TRANSCRIPT_CHARS = 20000
     if len(transcript) > MAX_TRANSCRIPT_CHARS:
-        print(f"[AI-Gemini] Transcript too long ({len(transcript)} chars), truncating.")
+        print(f"[AI] Transcript too long ({len(transcript)} chars), truncating to {MAX_TRANSCRIPT_CHARS} chars")
         transcript = transcript[:MAX_TRANSCRIPT_CHARS] + "\n... [TRANSCRIPT TRUNCATED]"
 
     prompt = f"""You are a viral video editor. Analyze this transcript from the video titled "{video_title}".
@@ -86,7 +87,7 @@ Look for moments that are:
 - Would hook a viewer scrolling on social media
 - Has a strong opening line
 
-Return ONLY valid JSON, an array of objects:
+Return ONLY valid JSON (no markdown, no code blocks), an array of objects:
 [
   {{
     "clip_number": 1,
@@ -97,13 +98,36 @@ Return ONLY valid JSON, an array of objects:
     "hook": "The opening line that grabs attention"
   }}
 ]"""
-
-    text = call_gemini(prompt, json_mode=True)
     
+    response_text = ""
     try:
-        data = json.loads(text)
+        if provider == "gemini":
+            model = genai.GenerativeModel(GEMINI_MODEL)
+            # Gemini typically wraps JSON in markdown blocks, we ask it not to, but handle it anyway
+            result = model.generate_content(
+                f"You are a viral video editor. Return only JSON.\n\n{prompt}",
+                generation_config={"response_mime_type": "application/json"}
+            )
+            response_text = result.text
+        else:
+            # Groq
+            response = groq_client.chat.completions.create(
+                model=GROQ_MODEL,
+                messages=[
+                    {"role": "system", "content": "You are a viral video editor. Return only JSON."}, 
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                response_format={"type": "json_object"}
+            )
+            response_text = response.choices[0].message.content
+
+        # Clean potential markdown code blocks if the provider/model ignores instructions
+        response_text = response_text.replace("```json", "").replace("```", "").strip()
+        data = json.loads(response_text)
+    
     except Exception as e:
-        print(f"[AI-Gemini] Error parsing JSON: {e}")
+        print(f"[AI-{provider.title()}] Error parsing JSON or API call: {e}")
         data = []
     
     # Extract list from various possible JSON structures
@@ -124,9 +148,9 @@ Return ONLY valid JSON, an array of objects:
             else:
                 clips_list = []
 
-    # Final Fallback
+    # Final Fallback: If AI fails to find clips, pick a segment from the middle
     if not clips_list:
-        print("[AI-Gemini] [WARN] AI returned no valid clips, using robust fallback.")
+        print(f"[AI] [WARN] AI returned no valid clips, using robust fallback.")
         clips_list = [{
             "clip_number": 1,
             "start_time": "00:15",
@@ -140,8 +164,9 @@ Return ONLY valid JSON, an array of objects:
 
 
 def generate_voiceover_script(clip_transcript: str, clip_title: str, video_title: str) -> str:
-    """Generate a commentary voiceover script using Gemini."""
-    print(f"[AI-Gemini] Generating voiceover script for: {clip_title}")
+    """Generate a commentary voiceover script using Llama 3 or Gemini."""
+    provider = _get_provider()
+    print(f"[AI-{provider.title()}] Generating voiceover script for: {clip_title}")
 
     prompt = f"""You are a professional video commentator creating transformative content.
 
@@ -164,12 +189,28 @@ RULES:
 
 Return ONLY the voiceover script text."""
 
-    return call_gemini(prompt, json_mode=False)
+    try:
+        if provider == "gemini":
+            model = genai.GenerativeModel(GEMINI_MODEL)
+            result = model.generate_content(prompt)
+            return result.text.strip()
+        else:
+            response = groq_client.chat.completions.create(
+                model=GROQ_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.9,
+            )
+            return response.choices[0].message.content.strip()
+            
+    except Exception as e:
+        print(f"[AI-{provider.title()}] Voiceover generation failed: {e}")
+        return "Check this out! What do you think about this moment? Let me know in the comments below!"
 
 
 def generate_youtube_metadata(clip_title: str, clip_hook: str, video_title: str) -> dict:
-    """Generate SEO-optimized YouTube title, description, and tags using Gemini."""
-    print(f"[AI-Gemini] Generating YouTube metadata for: {clip_title}")
+    """Generate SEO-optimized YouTube title, description, and tags using Llama 3 or Gemini."""
+    provider = _get_provider()
+    print(f"[AI-{provider.title()}] Generating YouTube metadata for: {clip_title}")
 
     prompt = f"""You are a YouTube SEO expert specializing in Roblox gaming shorts.
 
@@ -184,14 +225,37 @@ Generate YouTube metadata for this short clip. Return ONLY valid JSON:
   "tags": ["tag1", "tag2", "tag3"]
 }}"""
 
-    text = call_gemini(prompt, json_mode=True)
+    response_text = ""
     try:
-        return json.loads(text)
-    except Exception:
+        if provider == "gemini":
+            model = genai.GenerativeModel(GEMINI_MODEL)
+            result = model.generate_content(
+                f"You are a YouTube SEO expert. Return only JSON.\n\n{prompt}",
+                generation_config={"response_mime_type": "application/json"}
+            )
+            response_text = result.text
+        else:
+            response = groq_client.chat.completions.create(
+                model=GROQ_MODEL,
+                messages=[
+                    {"role": "system", "content": "You are a YouTube SEO expert. Return only JSON."}, 
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.8,
+                response_format={"type": "json_object"}
+            )
+            response_text = response.choices[0].message.content
+        
+        # Cleanup
+        response_text = response_text.replace("```json", "").replace("```", "").strip()
+        return json.loads(response_text)
+
+    except Exception as e:
+        print(f"[AI-{provider.title()}] Metadata generation failed: {e}")
         return {
-            "title": clip_title,
-            "description": "#shorts",
-            "tags": ["shorts"]
+            "title": clip_title[:70],
+            "description": f"#shorts #roblox #gaming\n\nOriginal video: {video_title}",
+            "tags": ["roblox", "gaming", "shorts", "clips"]
         }
 
 
