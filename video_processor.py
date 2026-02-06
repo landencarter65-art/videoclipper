@@ -21,6 +21,7 @@ def cut_clip(video_path: Path, start_seconds: float, end_seconds: float, clip_in
     # 9:16 Crop + cinematic effects chain:
     # Scale to 110% (792x1408) for zoom headroom
     # Center is at x=36, y=64 ( (792-720)/2 , (1408-1280)/2 )
+    fade_out = max(0, duration - 0.5)
     vf = (
         "crop=ih*9/16:ih,"
         "scale=792:1408,"
