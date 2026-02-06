@@ -19,16 +19,16 @@ def cut_clip(video_path: Path, start_seconds: float, end_seconds: float, clip_in
     duration = end_seconds - start_seconds
 
     # 9:16 Crop + cinematic effects chain:
-    # Tone down the drift slightly (from 29/51 to 15/25)
-    fade_out = max(0, duration - 0.5)
+    # Scale to 110% (792x1408) for zoom headroom
+    # Center is at x=36, y=64 ( (792-720)/2 , (1408-1280)/2 )
     vf = (
         "crop=ih*9/16:ih,"
-        "scale=778:1382,"
+        "scale=792:1408,"
         f"crop=720:1280"
-        f":'15*pow(t/{duration},0.7)+between(t,1.8,2.5)*3*sin(25*t)'"
-        f":'25*pow(t/{duration},0.7)+between(t,1.8,2.5)*3*cos(20*t)',"
-        "eq=contrast=1.1:saturation=1.3:brightness=0.02,"
-        "vignette=PI/5,"
+        f":'36-10*pow(t/{duration},0.7)+between(t,1.8,2.5)*3*sin(25*t)'"
+        f":'64-15*pow(t/{duration},0.7)+between(t,1.8,2.5)*3*cos(20*t)',"
+        "eq=contrast=1.1:saturation=1.2:brightness=0.01,"
+        "vignette=PI/6,"
         f"fade=in:st=0:d=0.5,fade=out:st={fade_out}:d=0.5"
     )
 
@@ -158,10 +158,11 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Impact,72,&H00FFFFFF,&H000000FF,&H00000000,&HBB000000,1,0,0,0,100,100,0,0,4,0,0,2,20,20,120,1
+Style: Default,Impact,52,&H0000FFFF,&H000000FF,&H00000000,&HBB000000,1,0,0,0,100,100,0,0,4,0,0,2,20,20,250,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
 """
 
     dialogues = []
@@ -246,18 +247,28 @@ def add_subtitles(video_path: Path, subtitle_text: str, clip_index: int,
         srt_path.write_text(srt_content, encoding="utf-8")
 
         srt_escaped = str(srt_path).replace("\\", "/").replace(":", "\\:")
-        # Clean TikTok style - white text, black box background, top center
-        # Alignment=8 is top center, MarginV=100 from top
-        style = "Fontname=Impact,FontSize=54,PrimaryColour=&H00FFFFFF,BackColour=&HBB000000,Bold=1,Alignment=8,MarginV=100,BorderStyle=4"
+        # Clean TikTok style - Yellow text, black box background, bottom center
+        # Alignment=2 is bottom center, MarginV=250 from bottom
+        style = "Fontname=Impact,FontSize=48,PrimaryColour=&H0000FFFF,BackColour=&HBB000000,Bold=1,Alignment=2,MarginV=250,BorderStyle=4"
 
         # Split text into chunks of ~5 words for better readability in fallback
         words = clean_text.split()
         chunks = [" ".join(words[i:i+5]) for i in range(0, len(words), 5)]
         srt_lines = []
         for i, chunk in enumerate(chunks):
-            start_t = i * 4
-            end_t = (i + 1) * 4
-            srt_lines.append(f"{i+1}\n00:00:{start_t:02d},000 --> 00:00:{end_t:02d},000\n{chunk}\n")
+            start_s = i * 4
+            end_s = (i + 1) * 4
+            
+            # Format as HH:MM:SS,mmm
+            def format_srt_time(total_seconds):
+                h = total_seconds // 3600
+                m = (total_seconds % 3600) // 60
+                s = total_seconds % 60
+                return f"{h:02d}:{m:02d}:{s:02d},000"
+
+            start_t = format_srt_time(start_s)
+            end_t = format_srt_time(end_s)
+            srt_lines.append(f"{i+1}\n{start_t} --> {end_t}\n{chunk}\n")
         
         srt_content = "\n".join(srt_lines)
         srt_path.write_text(srt_content, encoding="utf-8")
