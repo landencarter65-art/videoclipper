@@ -11,7 +11,7 @@ GROQ_MODEL = "llama-3.3-70b-versatile"
 WHISPER_MODEL = "whisper-large-v3"
 
 # Use the strongest free model
-GEMINI_MODEL = "gemini-flash-latest"
+GEMINI_MODEL = "gemini-1.5-flash"
 
 # ── YouTube Channels to Monitor ─────────────────────────────
 # Stored as HF Space secret "CHANNEL_IDS" (comma-separated)

@@ -3,13 +3,39 @@ import time
 import os
 from pathlib import Path
 from groq import Groq
-from config import GROQ_API_KEY, GROQ_MODEL, WHISPER_MODEL, NUM_CLIPS, CLIP_MIN_SECONDS, CLIP_MAX_SECONDS
+import google.generativeai as genai
+from config import GROQ_API_KEY, GROQ_MODEL, WHISPER_MODEL, NUM_CLIPS, CLIP_MIN_SECONDS, CLIP_MAX_SECONDS, GEMINI_API_KEY, GEMINI_MODEL
 
+# ── Init Clients ────────────────────────────────────────────
 client = None
 if GROQ_API_KEY:
     client = Groq(api_key=GROQ_API_KEY)
 else:
-    print("[WARNING] GROQ_API_KEY not set — AI features will fail until configured.")
+    print("[WARNING] GROQ_API_KEY not set — Transcription features will fail.")
+
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+else:
+    print("[WARNING] GEMINI_API_KEY not set — Text generation features will fail.")
+
+
+def call_gemini(prompt: str, json_mode: bool = False) -> str:
+    """Helper to call Gemini API."""
+    try:
+        model = genai.GenerativeModel(GEMINI_MODEL)
+        
+        generation_config = {}
+        if json_mode:
+            generation_config["response_mime_type"] = "application/json"
+            
+        response = model.generate_content(
+            prompt,
+            generation_config=generation_config
+        )
+        return response.text.strip()
+    except Exception as e:
+        print(f"[AI-Gemini] Error: {e}")
+        return "{}" if json_mode else ""
 
 
 def transcribe_audio(audio_path: Path) -> str:
@@ -37,13 +63,14 @@ def transcribe_audio(audio_path: Path) -> str:
 
 
 def select_best_clips(transcript: str, video_title: str, video_path: Path = None) -> list[dict]:
-    """Use Groq (Llama 3) to pick the most engaging clips from the transcript."""
-    print("[AI-Groq] Analyzing transcript for best clips...")
+    """Use Gemini to pick the most engaging clips from the transcript."""
+    print("[AI-Gemini] Analyzing transcript for best clips...")
 
-    # Truncate transcript to ~8K tokens (~20K chars) to stay under Groq's 12K TPM limit
-    MAX_TRANSCRIPT_CHARS = 20000
+    # Gemini Flash has a large context window (1M tokens), so less aggressive truncation is needed
+    # But we'll keep a safe limit just in case
+    MAX_TRANSCRIPT_CHARS = 100000 
     if len(transcript) > MAX_TRANSCRIPT_CHARS:
-        print(f"[AI-Groq] Transcript too long ({len(transcript)} chars), truncating to {MAX_TRANSCRIPT_CHARS} chars")
+        print(f"[AI-Gemini] Transcript too long ({len(transcript)} chars), truncating.")
         transcript = transcript[:MAX_TRANSCRIPT_CHARS] + "\n... [TRANSCRIPT TRUNCATED]"
 
     prompt = f"""You are a viral video editor. Analyze this transcript from the video titled "{video_title}".
@@ -59,7 +86,7 @@ Look for moments that are:
 - Would hook a viewer scrolling on social media
 - Has a strong opening line
 
-Return ONLY valid JSON (no markdown, no code blocks), an array of objects:
+Return ONLY valid JSON, an array of objects:
 [
   {{
     "clip_number": 1,
@@ -71,21 +98,12 @@ Return ONLY valid JSON (no markdown, no code blocks), an array of objects:
   }}
 ]"""
 
-    response = client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[
-            {"role": "system", "content": "You are a viral video editor. Return only JSON."}, 
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.7,
-        response_format={"type": "json_object"}
-    )
-
-    text = response.choices[0].message.content.strip()
+    text = call_gemini(prompt, json_mode=True)
+    
     try:
         data = json.loads(text)
     except Exception as e:
-        print(f"[AI-Groq] Error parsing JSON: {e}")
+        print(f"[AI-Gemini] Error parsing JSON: {e}")
         data = []
     
     # Extract list from various possible JSON structures
@@ -106,9 +124,9 @@ Return ONLY valid JSON (no markdown, no code blocks), an array of objects:
             else:
                 clips_list = []
 
-    # Final Fallback: If AI fails to find clips, pick a segment from the middle
+    # Final Fallback
     if not clips_list:
-        print("[AI-Groq] [WARN] AI returned no valid clips, using robust fallback.")
+        print("[AI-Gemini] [WARN] AI returned no valid clips, using robust fallback.")
         clips_list = [{
             "clip_number": 1,
             "start_time": "00:15",
@@ -122,8 +140,8 @@ Return ONLY valid JSON (no markdown, no code blocks), an array of objects:
 
 
 def generate_voiceover_script(clip_transcript: str, clip_title: str, video_title: str) -> str:
-    """Generate a commentary voiceover script using Llama 3."""
-    print(f"[AI-Groq] Generating voiceover script for: {clip_title}")
+    """Generate a commentary voiceover script using Gemini."""
+    print(f"[AI-Gemini] Generating voiceover script for: {clip_title}")
 
     prompt = f"""You are a professional video commentator creating transformative content.
 
@@ -146,18 +164,12 @@ RULES:
 
 Return ONLY the voiceover script text."""
 
-    response = client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.9,
-    )
-
-    return response.choices[0].message.content.strip()
+    return call_gemini(prompt, json_mode=False)
 
 
 def generate_youtube_metadata(clip_title: str, clip_hook: str, video_title: str) -> dict:
-    """Generate SEO-optimized YouTube title, description, and tags using Llama 3."""
-    print(f"[AI-Groq] Generating YouTube metadata for: {clip_title}")
+    """Generate SEO-optimized YouTube title, description, and tags using Gemini."""
+    print(f"[AI-Gemini] Generating YouTube metadata for: {clip_title}")
 
     prompt = f"""You are a YouTube SEO expert specializing in Roblox gaming shorts.
 
@@ -172,17 +184,15 @@ Generate YouTube metadata for this short clip. Return ONLY valid JSON:
   "tags": ["tag1", "tag2", "tag3"]
 }}"""
 
-    response = client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[
-            {"role": "system", "content": "You are a YouTube SEO expert. Return only JSON."}, 
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.8,
-        response_format={"type": "json_object"}
-    )
-
-    return json.loads(response.choices[0].message.content.strip())
+    text = call_gemini(prompt, json_mode=True)
+    try:
+        return json.loads(text)
+    except Exception:
+        return {
+            "title": clip_title,
+            "description": "#shorts",
+            "tags": ["shorts"]
+        }
 
 
 def timestamp_to_seconds(ts: str) -> float:

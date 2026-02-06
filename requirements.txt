@@ -1,5 +1,5 @@
 yt-dlp
-google-genai
+google-generativeai
 groq
 edge-tts
 aiofiles
