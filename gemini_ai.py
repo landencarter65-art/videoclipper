@@ -107,14 +107,19 @@ Return ONLY valid JSON (no markdown, no code blocks), an array of objects:
     response_text = ""
     try:
         if provider == "gemini":
-            model = genai.GenerativeModel(GEMINI_MODEL)
-            # Gemini typically wraps JSON in markdown blocks, we ask it not to, but handle it anyway
-            result = model.generate_content(
-                f"You are a viral video editor. Return only JSON.\n\n{prompt}",
-                generation_config={"response_mime_type": "application/json"}
-            )
-            response_text = result.text
-        else:
+            try:
+                model = genai.GenerativeModel(GEMINI_MODEL)
+                # Gemini typically wraps JSON in markdown blocks, we ask it not to, but handle it anyway
+                result = model.generate_content(
+                    f"You are a viral video editor. Return only JSON.\n\n{prompt}",
+                    generation_config={"response_mime_type": "application/json"}
+                )
+                response_text = result.text
+            except Exception as gem_err:
+                print(f"[AI-Gemini] API failed: {gem_err}. Falling back to Groq...")
+                provider = "groq" # Switch provider for the fallback call
+
+        if provider == "groq":
             # Groq
             response = groq_client.chat.completions.create(
                 model=GROQ_MODEL,
@@ -196,10 +201,15 @@ Return ONLY the voiceover script text."""
 
     try:
         if provider == "gemini":
-            model = genai.GenerativeModel(GEMINI_MODEL)
-            result = model.generate_content(prompt)
-            return result.text.strip()
-        else:
+            try:
+                model = genai.GenerativeModel(GEMINI_MODEL)
+                result = model.generate_content(prompt)
+                return result.text.strip()
+            except Exception as gem_err:
+                print(f"[AI-Gemini] Voiceover failed: {gem_err}. Falling back to Groq...")
+                provider = "groq"
+
+        if provider == "groq":
             response = groq_client.chat.completions.create(
                 model=GROQ_MODEL,
                 messages=[{"role": "user", "content": prompt}],
@@ -233,13 +243,18 @@ Generate YouTube metadata for this short clip. Return ONLY valid JSON:
     response_text = ""
     try:
         if provider == "gemini":
-            model = genai.GenerativeModel(GEMINI_MODEL)
-            result = model.generate_content(
-                f"You are a YouTube SEO expert. Return only JSON.\n\n{prompt}",
-                generation_config={"response_mime_type": "application/json"}
-            )
-            response_text = result.text
-        else:
+            try:
+                model = genai.GenerativeModel(GEMINI_MODEL)
+                result = model.generate_content(
+                    f"You are a YouTube SEO expert. Return only JSON.\n\n{prompt}",
+                    generation_config={"response_mime_type": "application/json"}
+                )
+                response_text = result.text
+            except Exception as gem_err:
+                print(f"[AI-Gemini] Metadata failed: {gem_err}. Falling back to Groq...")
+                provider = "groq"
+
+        if provider == "groq":
             response = groq_client.chat.completions.create(
                 model=GROQ_MODEL,
                 messages=[
