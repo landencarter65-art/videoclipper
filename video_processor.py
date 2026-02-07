@@ -10,47 +10,96 @@ from config import (
     AUDIO_BITRATE,
     ORIGINAL_AUDIO_VOLUME,
     MUSIC_VOLUME,
+    OUTPUT_WIDTH,
+    OUTPUT_HEIGHT,
+    SUBTITLE_STYLE,
 )
 
 
 def cut_clip(video_path: Path, start_seconds: float, end_seconds: float, clip_index: int) -> Path:
-    """Extract a clip from the video using ffmpeg and convert to 9:16 vertical."""
+    """Extract a clip from the video using ffmpeg (simple cut, no effects)."""
     output_path = CLIPS_DIR / f"clip_{clip_index}.mp4"
     duration = end_seconds - start_seconds
-
-    # 9:16 Crop + cinematic effects chain:
-    # Scale to 110% (792x1408) for zoom headroom
-    # Center is at x=36, y=64 ( (792-720)/2 , (1408-1280)/2 )
-    fade_out = max(0, duration - 0.5)
-    vf = (
-        "crop=ih*9/16:ih,"
-        "scale=792:1408,"
-        f"crop=720:1280"
-        f":'36-10*pow(t/{duration},0.7)+between(t,1.8,2.5)*3*sin(25*t)'"
-        f":'64-15*pow(t/{duration},0.7)+between(t,1.8,2.5)*3*cos(20*t)',"
-        "eq=contrast=1.1:saturation=1.2:brightness=0.01,"
-        "vignette=PI/6,"
-        f"fade=in:st=0:d=0.5,fade=out:st={fade_out}:d=0.5"
-    )
 
     cmd = [
         "ffmpeg", "-y",
         "-ss", str(start_seconds),
         "-i", str(video_path),
         "-t", str(duration),
-        "-vf", vf,
         "-c:v", VIDEO_CODEC,
-        "-crf", VIDEO_CRF,
-        "-preset", VIDEO_PRESET,
         "-c:a", "aac",
-        "-b:a", AUDIO_BITRATE,
+        "-preset", VIDEO_PRESET,
+        "-crf", VIDEO_CRF,
         str(output_path),
     ]
 
-    print(f"[FFMPEG] Cutting 9:16 clip {clip_index}: {start_seconds}s → {end_seconds}s")
+    print(f"[FFMPEG] Cutting clip {clip_index}: {start_seconds}s -> {end_seconds}s ({duration:.1f}s)")
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(f"ffmpeg cut failed: {result.stderr[-500:]}")
+
+    return output_path
+
+
+def create_rainbow_background(duration: float, clip_index: int) -> Path:
+    """Create animated blurred rainbow gradient background (matching notebook)."""
+    output_path = CLIPS_DIR / f"rainbow_bg_{clip_index}.mp4"
+
+    filter_cmd = (
+        f"color=s={OUTPUT_WIDTH}x{OUTPUT_HEIGHT}:c=red:d={duration},"
+        f"hue=H=t*60:s=2,"
+        f"boxblur=luma_radius=100:luma_power=3,"
+        f"eq=brightness=0.05:saturation=1.2"
+    )
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", "lavfi",
+        "-i", filter_cmd,
+        "-t", str(duration),
+        "-c:v", VIDEO_CODEC,
+        "-preset", VIDEO_PRESET,
+        "-crf", VIDEO_CRF,
+        "-pix_fmt", "yuv420p",
+        str(output_path),
+    ]
+
+    print(f"[FFMPEG] Creating rainbow background for clip {clip_index} ({duration:.1f}s)")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"ffmpeg rainbow bg failed: {result.stderr[-500:]}")
+
+    return output_path
+
+
+def combine_with_rainbow(clip_path: Path, rainbow_bg_path: Path, clip_index: int) -> Path:
+    """Overlay video on rainbow background (centered, maintaining aspect ratio)."""
+    output_path = CLIPS_DIR / f"combined_{clip_index}.mp4"
+
+    filter_complex = (
+        f"[1:v]scale=-1:{OUTPUT_HEIGHT}:force_original_aspect_ratio=decrease[scaled];"
+        f"[0:v][scaled]overlay=(W-w)/2:(H-h)/2:shortest=1[outv]"
+    )
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(rainbow_bg_path),
+        "-i", str(clip_path),
+        "-filter_complex", filter_complex,
+        "-map", "[outv]",
+        "-map", "1:a?",
+        "-c:v", VIDEO_CODEC,
+        "-c:a", "aac",
+        "-preset", VIDEO_PRESET,
+        "-crf", VIDEO_CRF,
+        "-shortest",
+        str(output_path),
+    ]
+
+    print(f"[FFMPEG] Combining clip {clip_index} with rainbow background")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"ffmpeg combine failed: {result.stderr[-500:]}")
 
     return output_path
 
@@ -59,7 +108,6 @@ def mix_voiceover(clip_path: Path, voiceover_path: Path, music_path: Path | None
     """Mix original clip audio (lowered) + voiceover + background music."""
     output_path = CLIPS_DIR / f"mixed_{clip_index}.mp4"
 
-    # Get duration of the clip to calculate fade out
     try:
         probe_cmd = [
             "ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -68,13 +116,11 @@ def mix_voiceover(clip_path: Path, voiceover_path: Path, music_path: Path | None
         duration_str = subprocess.check_output(probe_cmd, text=True).strip()
         duration = float(duration_str)
     except Exception:
-        duration = 60.0  # Fallback if probe fails
+        duration = 60.0
 
     if music_path and music_path.exists():
-        # Calculate fade out: start 5s before end
         fade_start = max(0, duration - 5)
 
-        # 3-layer mix: original (low) + voiceover + background music (subtle)
         filter_complex = (
             f"[0:a]volume={ORIGINAL_AUDIO_VOLUME}[orig];"
             f"[1:a]adelay=2000|2000,volume=1.8[voice];"
@@ -95,7 +141,6 @@ def mix_voiceover(clip_path: Path, voiceover_path: Path, music_path: Path | None
             str(output_path),
         ]
     else:
-        # 2-layer fallback: original (low) + voiceover only
         filter_complex = (
             f"[0:a]volume={ORIGINAL_AUDIO_VOLUME}[orig];"
             f"[1:a]adelay=2000|2000,volume=1.8[voice];"
@@ -122,173 +167,133 @@ def mix_voiceover(clip_path: Path, voiceover_path: Path, music_path: Path | None
     return output_path
 
 
-def ms_to_ass_time(ms: int) -> str:
-    """Convert milliseconds to ASS timestamp format (H:MM:SS.cs)."""
-    hours = ms // 3600000
-    ms %= 3600000
-    minutes = ms // 60000
-    ms %= 60000
-    seconds = ms // 1000
-    centiseconds = (ms % 1000) // 10
-    return f"{hours}:{minutes:02d}:{seconds:02d}.{centiseconds:02d}"
+def create_word_srt(word_timings: List[dict], output_path: Path,
+                    voiceover_delay_ms: int = 2000) -> Path:
+    """Create word-by-word SRT subtitles (matching notebook approach).
 
-
-def generate_ass_subtitles(word_timings: List[dict], output_path: Path,
-                           voiceover_delay_ms: int = 2000) -> Path:
+    Each word gets its own subtitle entry, displayed one at a time in uppercase.
     """
-    Generate TikTok-style ASS subtitles - ONE word at a time with clean box.
+    def ms_to_srt_time(ms: int) -> str:
+        hours = ms // 3600000
+        ms %= 3600000
+        minutes = ms // 60000
+        ms %= 60000
+        seconds = ms // 1000
+        millis = ms % 1000
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
 
-    Args:
-        word_timings: List of {"word": str, "start_ms": int, "end_ms": int}
-        output_path: Path to save the .ass file
-        voiceover_delay_ms: Delay before voiceover starts (default 2000ms)
+    srt_lines = []
+    index = 1
 
-    Returns:
-        Path to the generated .ass file
-    """
-    # ASS Header - Clean TikTok/CapCut style
-    # BorderStyle=4 = opaque box background
-    # BackColour=&HBB000000 = semi-transparent black box
-    # Alignment=2 = bottom center (like TikTok)
-    # Large bold font, white text
-    ass_header = """[Script Info]
-ScriptType: v4.00+
-PlayResX: 720
-PlayResY: 1280
-WrapStyle: 0
-
-[V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Impact,52,&H0000FFFF,&H000000FF,&H00000000,&HBB000000,1,0,0,0,100,100,0,0,4,0,0,2,20,20,250,1
-
-[Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-"""
-
-    dialogues = []
-
-    # Show ONE word at a time for clean TikTok style
     for timing in word_timings:
         word = timing["word"].strip().upper()
         if not word:
             continue
 
-        # Add voiceover delay to timestamps
         start_ms = timing["start_ms"] + voiceover_delay_ms
         end_ms = timing["end_ms"] + voiceover_delay_ms
 
-        # Ensure minimum display time (at least 150ms per word)
         if end_ms - start_ms < 150:
             end_ms = start_ms + 150
 
-        start_time = ms_to_ass_time(start_ms)
-        end_time = ms_to_ass_time(end_ms)
+        start_t = ms_to_srt_time(start_ms)
+        end_t = ms_to_srt_time(end_ms)
 
-        dialogue = f"Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{word}"
-        dialogues.append(dialogue)
+        srt_lines.append(f"{index}\n{start_t} --> {end_t}\n{word}\n")
+        index += 1
 
-    # Write ASS file
-    ass_content = ass_header + "\n".join(dialogues)
-    output_path.write_text(ass_content, encoding="utf-8")
+    srt_content = "\n".join(srt_lines)
+    output_path.write_text(srt_content, encoding="utf-8")
 
-    print(f"[SUBTITLES] Generated ASS with {len(dialogues)} words")
+    print(f"[SUBTITLES] Generated SRT with {index - 1} words")
+    return output_path
+
+
+def burn_subtitles(input_video: Path, srt_path: Path, clip_index: int,
+                   style: dict = None) -> Path:
+    """Burn subtitles onto video using force_style (matching notebook approach)."""
+    output_path = OUTPUT_DIR / f"final_clip_{clip_index}.mp4"
+    if style is None:
+        style = SUBTITLE_STYLE
+
+    force_style = (
+        f"FontName={style['font']},"
+        f"FontSize={style['font_size']},"
+        f"PrimaryColour={style['primary_color']},"
+        f"OutlineColour={style['outline_color']},"
+        f"BackColour={style['back_color']},"
+        f"BorderStyle=1,"
+        f"Outline={style['outline']},"
+        f"Shadow={style['shadow']},"
+        f"Bold={style['bold']},"
+        f"Alignment={style['alignment']},"
+        f"MarginV={style['margin_v']}"
+    )
+
+    srt_escaped = str(srt_path).replace("\\", "/").replace(":", r"\:")
+    subtitle_filter = f"subtitles='{srt_escaped}':force_style='{force_style}'"
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(input_video),
+        "-vf", subtitle_filter,
+        "-c:v", VIDEO_CODEC,
+        "-c:a", "copy",
+        "-preset", VIDEO_PRESET,
+        "-crf", VIDEO_CRF,
+        str(output_path),
+    ]
+
+    print(f"[FFMPEG] Burning subtitles for clip {clip_index}")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"ffmpeg subtitle burn failed: {result.stderr[-500:]}")
+
     return output_path
 
 
 def add_subtitles(video_path: Path, subtitle_text: str, clip_index: int,
                   word_timings: List[dict] = None) -> Path:
-    """
-    Burn subtitles onto the video.
+    """Burn subtitles onto the video.
 
-    Args:
-        video_path: Input video file
-        subtitle_text: Full subtitle text (fallback if no timings)
-        clip_index: Clip number for naming
-        word_timings: Optional word timings for animated TikTok-style subtitles
+    Strategy 1: Word-by-word SRT with force_style (if word timings available)
+    Strategy 2: Chunked SRT fallback (if no timings)
+    Strategy 3: Return video without subtitles (failsafe)
     """
     output_path = OUTPUT_DIR / f"final_clip_{clip_index}.mp4"
 
-    # Strategy 1: Animated ASS subtitles (if word timings available)
+    # Strategy 1: Word-by-word SRT with force_style
     if word_timings and len(word_timings) > 0:
         try:
-            print(f"[FFMPEG] Burning TikTok-style subtitles for clip {clip_index}")
-            ass_path = CLIPS_DIR / f"sub_{clip_index}.ass"
-            generate_ass_subtitles(word_timings, ass_path, voiceover_delay_ms=2000)
-
-            # Escape path for FFmpeg filter (Windows compatibility)
-            ass_escaped = str(ass_path).replace("\\", "/").replace(":", "\\:")
-
-            cmd = [
-                "ffmpeg", "-y",
-                "-i", str(video_path),
-                "-vf", f"ass='{ass_escaped}'",
-                "-c:v", VIDEO_CODEC,
-                "-crf", VIDEO_CRF,
-                "-preset", VIDEO_PRESET,
-                "-c:a", "copy",
-                str(output_path),
-            ]
-
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode == 0:
-                return output_path
-            else:
-                print(f"[WARN] ASS subtitle burn failed, trying SRT fallback: {result.stderr[-200:]}")
+            print(f"[FFMPEG] Burning word-by-word subtitles for clip {clip_index}")
+            srt_path = CLIPS_DIR / f"sub_{clip_index}.srt"
+            create_word_srt(word_timings, srt_path, voiceover_delay_ms=2000)
+            return burn_subtitles(video_path, srt_path, clip_index)
         except Exception as e:
-            print(f"[WARN] ASS generation failed: {e}, trying SRT fallback")
+            print(f"[WARN] Word-by-word subtitle burn failed: {e}, trying fallback")
 
-    # Strategy 2: Simple SRT fallback (existing method)
+    # Strategy 2: Chunked SRT fallback
     try:
-        print(f"[FFMPEG] Burning simple subtitles for clip {clip_index}")
+        print(f"[FFMPEG] Burning chunked subtitles for clip {clip_index}")
         clean_text = subtitle_text.replace("\n", " ").replace("\"", "'").strip().upper()
 
         srt_path = CLIPS_DIR / f"sub_{clip_index}.srt"
-        srt_content = f"1\n00:00:02,000 --> 00:01:30,000\n{clean_text}\n"
-        srt_path.write_text(srt_content, encoding="utf-8")
-
-        srt_escaped = str(srt_path).replace("\\", "/").replace(":", "\\:")
-        # Clean TikTok style - Yellow text, black box background, bottom center
-        # Alignment=2 is bottom center, MarginV=250 from bottom
-        style = "Fontname=Impact,FontSize=48,PrimaryColour=&H0000FFFF,BackColour=&HBB000000,Bold=1,Alignment=2,MarginV=250,BorderStyle=4"
-
-        # Split text into chunks of ~5 words for better readability in fallback
         words = clean_text.split()
         chunks = [" ".join(words[i:i+5]) for i in range(0, len(words), 5)]
         srt_lines = []
         for i, chunk in enumerate(chunks):
             start_s = i * 4
             end_s = (i + 1) * 4
-            
-            # Format as HH:MM:SS,mmm
-            def format_srt_time(total_seconds):
-                h = total_seconds // 3600
-                m = (total_seconds % 3600) // 60
-                s = total_seconds % 60
-                return f"{h:02d}:{m:02d}:{s:02d},000"
-
-            start_t = format_srt_time(start_s)
-            end_t = format_srt_time(end_s)
+            h_s, m_s, s_s = start_s // 3600, (start_s % 3600) // 60, start_s % 60
+            h_e, m_e, s_e = end_s // 3600, (end_s % 3600) // 60, end_s % 60
+            start_t = f"{h_s:02d}:{m_s:02d}:{s_s:02d},000"
+            end_t = f"{h_e:02d}:{m_e:02d}:{s_e:02d},000"
             srt_lines.append(f"{i+1}\n{start_t} --> {end_t}\n{chunk}\n")
-        
+
         srt_content = "\n".join(srt_lines)
         srt_path.write_text(srt_content, encoding="utf-8")
 
-        cmd = [
-            "ffmpeg", "-y",
-            "-i", str(video_path),
-            "-vf", f"subtitles='{srt_escaped}':force_style='{style}'",
-            "-c:v", VIDEO_CODEC,
-            "-crf", VIDEO_CRF,
-            "-preset", VIDEO_PRESET,
-            "-c:a", "copy",
-            str(output_path),
-        ]
-
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode == 0:
-            return output_path
-        else:
-            print(f"[WARN] SRT subtitle burn failed: {result.stderr[-200:]}")
+        return burn_subtitles(video_path, srt_path, clip_index)
     except Exception as e:
         print(f"[WARN] SRT fallback failed: {e}")
 

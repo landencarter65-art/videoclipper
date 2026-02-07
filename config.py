@@ -39,10 +39,117 @@ TTS_VOICE = "en-US-GuyNeural"
 # ── FFmpeg Quality ──────────────────────────────────────────
 # HF free tier has 2 vCPU — use "medium" preset to avoid timeout
 VIDEO_CODEC = "libx264"
-VIDEO_CRF = "22"            # Higher CRF = lower quality = less memory/CPU
-VIDEO_PRESET = "faster"     # Faster preset = less memory usage
+VIDEO_CRF = "23"
+VIDEO_PRESET = "fast"
 AUDIO_BITRATE = "192k"
 ORIGINAL_AUDIO_VOLUME = "0.15"
+
+# ── Output Resolution (9:16 vertical) ─────────────────────
+OUTPUT_WIDTH = 1080
+OUTPUT_HEIGHT = 1920
+
+# ── Subtitle Style Presets ─────────────────────────────────
+SUBTITLE_STYLES = {
+    "classic": {
+        "font": "Montserrat-Bold",
+        "font_size": 12,
+        "primary_color": "&H00FFFFFF",
+        "outline_color": "&H00000000",
+        "back_color": "&H00000000",
+        "outline": 1,
+        "shadow": 1,
+        "bold": 1,
+        "alignment": 2,
+        "margin_v": 100,
+    },
+    "neon": {
+        "font": "Impact",
+        "font_size": 22,
+        "primary_color": "&H00FFFF00",
+        "outline_color": "&H00FF00FF",
+        "back_color": "&H00000000",
+        "outline": 5,
+        "shadow": 3,
+        "bold": 1,
+        "alignment": 2,
+        "margin_v": 100,
+    },
+    "yellow": {
+        "font": "Montserrat-Bold",
+        "font_size": 22,
+        "primary_color": "&H0000FFFF",
+        "outline_color": "&H00000000",
+        "back_color": "&H00000000",
+        "outline": 5,
+        "shadow": 3,
+        "bold": 1,
+        "alignment": 2,
+        "margin_v": 100,
+    },
+    "fire": {
+        "font": "Impact",
+        "font_size": 22,
+        "primary_color": "&H000080FF",
+        "outline_color": "&H00000080",
+        "back_color": "&H00000000",
+        "outline": 4,
+        "shadow": 2,
+        "bold": 1,
+        "alignment": 2,
+        "margin_v": 110,
+    },
+    "mrbeast": {
+        "font": "Impact",
+        "font_size": 22,
+        "primary_color": "&H0000FF00",
+        "outline_color": "&H00000000",
+        "back_color": "&H00000000",
+        "outline": 6,
+        "shadow": 4,
+        "bold": 1,
+        "alignment": 2,
+        "margin_v": 80,
+    },
+    "minimal": {
+        "font": "Helvetica-Bold",
+        "font_size": 22,
+        "primary_color": "&H00FFFFFF",
+        "outline_color": "&H80000000",
+        "back_color": "&H00000000",
+        "outline": 2,
+        "shadow": 0,
+        "bold": 1,
+        "alignment": 2,
+        "margin_v": 150,
+    },
+    "boxed": {
+        "font": "Roboto-Bold",
+        "font_size": 22,
+        "primary_color": "&H00FFFFFF",
+        "outline_color": "&H00000000",
+        "back_color": "&HCC000000",
+        "outline": 0,
+        "shadow": 0,
+        "bold": 1,
+        "alignment": 2,
+        "margin_v": 130,
+    },
+    "aesthetic": {
+        "font": "Georgia-Bold",
+        "font_size": 22,
+        "primary_color": "&H00CBC0FF",
+        "outline_color": "&H00800080",
+        "back_color": "&H00000000",
+        "outline": 3,
+        "shadow": 2,
+        "bold": 1,
+        "alignment": 2,
+        "margin_v": 140,
+    },
+}
+
+SELECTED_STYLE = "boxed"
+SUBTITLE_STYLE = SUBTITLE_STYLES[SELECTED_STYLE]
 
 # ── Paths ───────────────────────────────────────────────────
 # HF Spaces writable dir is /tmp or the app directory

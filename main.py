@@ -21,7 +21,7 @@ from config import DOWNLOADS_DIR, CLIPS_DIR, OUTPUT_DIR, NUM_CLIPS
 from downloader import check_new_videos, download_video, extract_audio, mark_processed, download_random_music
 from gemini_ai import transcribe_audio, select_best_clips, generate_voiceover_script, generate_youtube_metadata, timestamp_to_seconds
 from voiceover import generate_voiceover_audio
-from video_processor import cut_clip, mix_voiceover, add_subtitles, cleanup_temp_files
+from video_processor import cut_clip, create_rainbow_background, combine_with_rainbow, mix_voiceover, add_subtitles, cleanup_temp_files
 
 
 def process_video(video_url: str, video_title: str = "Unknown", progress_callback=None):
@@ -43,9 +43,9 @@ def process_video(video_url: str, video_title: str = "Unknown", progress_callbac
     print(f"URL: {video_url}")
     print(f"{'='*60}\n")
 
-    # Pipeline has 5 initial steps + 4 steps per clip (assuming NUM_CLIPS clips)
-    # Total steps: 5 + (NUM_CLIPS * 4) = 5 + 12 = 17 steps for 3 clips
-    total_steps = 5 + (NUM_CLIPS * 4)
+    # Pipeline has 5 initial steps + 5 steps per clip (assuming NUM_CLIPS clips)
+    # Total steps: 5 + (NUM_CLIPS * 5) = 5 + 5 = 10 steps for 1 clip
+    total_steps = 5 + (NUM_CLIPS * 5)
     current_step = 0
 
     def step_progress(step_name: str):
@@ -131,8 +131,14 @@ def process_video(video_url: str, video_title: str = "Unknown", progress_callbac
         clip_path = cut_clip(video_path, start, end, clip_num)
         step_progress(f"Clip {clip_num}: Cut video ({end - start:.1f}s)")
 
-        # Mix voiceover + background music with clip
-        mixed_path = mix_voiceover(clip_path, vo_audio_path, music_path, clip_num)
+        # Create rainbow background and overlay clip on it
+        clip_duration = end - start
+        rainbow_path = create_rainbow_background(clip_duration + 1, clip_num)
+        combined_path = combine_with_rainbow(clip_path, rainbow_path, clip_num)
+        step_progress(f"Clip {clip_num}: Rainbow background applied")
+
+        # Mix voiceover + background music with combined clip
+        mixed_path = mix_voiceover(combined_path, vo_audio_path, music_path, clip_num)
         
         # Burn subtitles (this also moves the file to OUTPUT_DIR)
         try:
