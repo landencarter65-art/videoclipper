@@ -60,28 +60,23 @@ def create_rainbow_composite(clip_path: Path, clip_index: int) -> Path:
     except Exception:
         duration = 62.0
 
-    # Single-pass: generate rainbow via lavfi + overlay clip on top
-    # boxblur radius=20 (was 100) — much lighter on memory
-    rainbow_src = (
+    # Single-pass: generate rainbow as source filter + overlay clip on top
+    # Clip is input [0], rainbow is generated inside the filter graph
+    filter_complex = (
         f"color=s={OUTPUT_WIDTH}x{OUTPUT_HEIGHT}:c=red:d={duration},"
         f"hue=H=t*60:s=2,"
         f"boxblur=luma_radius=20:luma_power=2,"
-        f"eq=brightness=0.05:saturation=1.2[bg]"
-    )
-
-    filter_complex = (
-        f"{rainbow_src};"
-        f"[1:v]scale=-1:{OUTPUT_HEIGHT}:force_original_aspect_ratio=decrease[scaled];"
+        f"eq=brightness=0.05:saturation=1.2[bg];"
+        f"[0:v]scale=-1:{OUTPUT_HEIGHT}:force_original_aspect_ratio=decrease[scaled];"
         f"[bg][scaled]overlay=(W-w)/2:(H-h)/2:shortest=1[outv]"
     )
 
     cmd = [
         "ffmpeg", "-y",
-        "-f", "lavfi", "-i", f"color=c=black:s=2x2:d={duration}",
         "-i", str(clip_path),
         "-filter_complex", filter_complex,
         "-map", "[outv]",
-        "-map", "1:a?",
+        "-map", "0:a?",
         "-c:v", VIDEO_CODEC,
         "-c:a", "aac",
         "-preset", VIDEO_PRESET,

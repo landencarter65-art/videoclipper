@@ -24,10 +24,8 @@ else:
 
 
 def _get_provider() -> str:
-    """Randomly select between 'groq' and 'gemini' (50/50) if both are available."""
-    if groq_client and gemini_configured:
-        return random.choice(["groq", "gemini"])
-    elif groq_client:
+    """Select AI provider. Prefers Groq (faster, no quota issues), Gemini as fallback."""
+    if groq_client:
         return "groq"
     elif gemini_configured:
         return "gemini"
