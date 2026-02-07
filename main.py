@@ -21,7 +21,7 @@ from config import DOWNLOADS_DIR, CLIPS_DIR, OUTPUT_DIR, NUM_CLIPS
 from downloader import check_new_videos, download_video, extract_audio, mark_processed, download_random_music
 from gemini_ai import transcribe_audio, select_best_clips, generate_voiceover_script, generate_youtube_metadata, timestamp_to_seconds
 from voiceover import generate_voiceover_audio
-from video_processor import cut_clip, create_rainbow_background, combine_with_rainbow, mix_voiceover, add_subtitles, cleanup_temp_files
+from video_processor import cut_clip, create_rainbow_composite, mix_voiceover, add_subtitles, cleanup_temp_files
 
 
 def process_video(video_url: str, video_title: str = "Unknown", progress_callback=None):
@@ -131,11 +131,15 @@ def process_video(video_url: str, video_title: str = "Unknown", progress_callbac
         clip_path = cut_clip(video_path, start, end, clip_num)
         step_progress(f"Clip {clip_num}: Cut video ({end - start:.1f}s)")
 
-        # Create rainbow background and overlay clip on it
-        clip_duration = end - start
-        rainbow_path = create_rainbow_background(clip_duration + 1, clip_num)
-        combined_path = combine_with_rainbow(clip_path, rainbow_path, clip_num)
+        # Rainbow background + overlay in single pass (memory efficient)
+        combined_path = create_rainbow_composite(clip_path, clip_num)
         step_progress(f"Clip {clip_num}: Rainbow background applied")
+
+        # Delete the raw clip immediately to free disk/memory
+        try:
+            clip_path.unlink()
+        except Exception:
+            pass
 
         # Mix voiceover + background music with combined clip
         mixed_path = mix_voiceover(combined_path, vo_audio_path, music_path, clip_num)

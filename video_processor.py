@@ -41,49 +41,43 @@ def cut_clip(video_path: Path, start_seconds: float, end_seconds: float, clip_in
     return output_path
 
 
-def create_rainbow_background(duration: float, clip_index: int) -> Path:
-    """Create animated blurred rainbow gradient background (matching notebook)."""
-    output_path = CLIPS_DIR / f"rainbow_bg_{clip_index}.mp4"
+def create_rainbow_composite(clip_path: Path, clip_index: int) -> Path:
+    """Generate rainbow background and overlay clip in a single FFmpeg pass.
 
-    filter_cmd = (
-        f"color=s={OUTPUT_WIDTH}x{OUTPUT_HEIGHT}:c=red:d={duration},"
-        f"hue=H=t*60:s=2,"
-        f"boxblur=luma_radius=100:luma_power=3,"
-        f"eq=brightness=0.05:saturation=1.2"
-    )
-
-    cmd = [
-        "ffmpeg", "-y",
-        "-f", "lavfi",
-        "-i", filter_cmd,
-        "-t", str(duration),
-        "-c:v", VIDEO_CODEC,
-        "-preset", VIDEO_PRESET,
-        "-crf", VIDEO_CRF,
-        "-pix_fmt", "yuv420p",
-        str(output_path),
-    ]
-
-    print(f"[FFMPEG] Creating rainbow background for clip {clip_index} ({duration:.1f}s)")
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"ffmpeg rainbow bg failed: {result.stderr[-500:]}")
-
-    return output_path
-
-
-def combine_with_rainbow(clip_path: Path, rainbow_bg_path: Path, clip_index: int) -> Path:
-    """Overlay video on rainbow background (centered, maintaining aspect ratio)."""
+    This avoids writing the rainbow background to disk and halves peak memory
+    usage compared to two separate FFmpeg processes.
+    """
     output_path = CLIPS_DIR / f"combined_{clip_index}.mp4"
 
+    # Get clip duration
+    try:
+        probe_cmd = [
+            "ffprobe", "-v", "error", "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1", str(clip_path)
+        ]
+        duration_str = subprocess.check_output(probe_cmd, text=True).strip()
+        duration = float(duration_str) + 1
+    except Exception:
+        duration = 62.0
+
+    # Single-pass: generate rainbow via lavfi + overlay clip on top
+    # boxblur radius=20 (was 100) — much lighter on memory
+    rainbow_src = (
+        f"color=s={OUTPUT_WIDTH}x{OUTPUT_HEIGHT}:c=red:d={duration},"
+        f"hue=H=t*60:s=2,"
+        f"boxblur=luma_radius=20:luma_power=2,"
+        f"eq=brightness=0.05:saturation=1.2[bg]"
+    )
+
     filter_complex = (
+        f"{rainbow_src};"
         f"[1:v]scale=-1:{OUTPUT_HEIGHT}:force_original_aspect_ratio=decrease[scaled];"
-        f"[0:v][scaled]overlay=(W-w)/2:(H-h)/2:shortest=1[outv]"
+        f"[bg][scaled]overlay=(W-w)/2:(H-h)/2:shortest=1[outv]"
     )
 
     cmd = [
         "ffmpeg", "-y",
-        "-i", str(rainbow_bg_path),
+        "-f", "lavfi", "-i", f"color=c=black:s=2x2:d={duration}",
         "-i", str(clip_path),
         "-filter_complex", filter_complex,
         "-map", "[outv]",
@@ -92,14 +86,15 @@ def combine_with_rainbow(clip_path: Path, rainbow_bg_path: Path, clip_index: int
         "-c:a", "aac",
         "-preset", VIDEO_PRESET,
         "-crf", VIDEO_CRF,
+        "-pix_fmt", "yuv420p",
         "-shortest",
         str(output_path),
     ]
 
-    print(f"[FFMPEG] Combining clip {clip_index} with rainbow background")
+    print(f"[FFMPEG] Creating rainbow composite for clip {clip_index}")
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        raise RuntimeError(f"ffmpeg combine failed: {result.stderr[-500:]}")
+        raise RuntimeError(f"ffmpeg rainbow composite failed: {result.stderr[-500:]}")
 
     return output_path
 

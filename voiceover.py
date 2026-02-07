@@ -52,6 +52,17 @@ def generate_voiceover_audio(text: str, output_path: Path) -> Tuple[Path, List[d
         word_timings: [{"word": str, "start_ms": int, "end_ms": int}, ...]
     """
     print(f"[TTS] Generating voiceover audio: {output_path.name}")
-    word_timings = asyncio.run(_generate_tts_with_timing(text, output_path))
+    try:
+        # If already inside an event loop (e.g. FastAPI/uvicorn), use nest_asyncio or thread
+        loop = asyncio.get_running_loop()
+        # Running inside an existing loop — run TTS in a separate thread
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            word_timings = pool.submit(
+                asyncio.run, _generate_tts_with_timing(text, output_path)
+            ).result()
+    except RuntimeError:
+        # No running loop — safe to use asyncio.run()
+        word_timings = asyncio.run(_generate_tts_with_timing(text, output_path))
     print(f"[TTS] Extracted {len(word_timings)} word timings")
     return output_path, word_timings

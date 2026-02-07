@@ -11,7 +11,7 @@ GROQ_MODEL = "llama-3.3-70b-versatile"
 WHISPER_MODEL = "whisper-large-v3"
 
 # Use the strongest free model
-GEMINI_MODEL = "gemini-1.5-flash"
+GEMINI_MODEL = "gemini-2.0-flash"
 
 # ── YouTube Channels to Monitor ─────────────────────────────
 # Stored as HF Space secret "CHANNEL_IDS" (comma-separated)
@@ -40,13 +40,13 @@ TTS_VOICE = "en-US-GuyNeural"
 # HF free tier has 2 vCPU — use "medium" preset to avoid timeout
 VIDEO_CODEC = "libx264"
 VIDEO_CRF = "23"
-VIDEO_PRESET = "fast"
+VIDEO_PRESET = "faster"
 AUDIO_BITRATE = "192k"
 ORIGINAL_AUDIO_VOLUME = "0.15"
 
 # ── Output Resolution (9:16 vertical) ─────────────────────
-OUTPUT_WIDTH = 1080
-OUTPUT_HEIGHT = 1920
+OUTPUT_WIDTH = 720
+OUTPUT_HEIGHT = 1280
 
 # ── Subtitle Style Presets ─────────────────────────────────
 SUBTITLE_STYLES = {
