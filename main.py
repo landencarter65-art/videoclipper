@@ -2,7 +2,7 @@
 Auto Clipping Pipeline
 ======================
 Detects new YouTube uploads → Downloads → Transcribes → Picks best clips →
-Generates voiceover commentary → Mixes audio → Outputs final clips.
+Mixes audio with background music → Burns speech subtitles → Outputs final clips.
 
 Usage:
     python main.py                  # Process new videos from monitored channels
@@ -10,30 +10,38 @@ Usage:
 """
 
 import argparse
-import sys
 import gc
 import shutil
 from pathlib import Path
 
-from tqdm import tqdm
-
 from config import DOWNLOADS_DIR, CLIPS_DIR, OUTPUT_DIR, NUM_CLIPS
 from downloader import check_new_videos, download_video, extract_audio, mark_processed, download_random_music
-from gemini_ai import transcribe_audio, select_best_clips, generate_voiceover_script, generate_youtube_metadata, timestamp_to_seconds
-from voiceover import generate_voiceover_audio
-from video_processor import cut_clip, create_rainbow_composite, mix_voiceover, add_subtitles, cleanup_temp_files
+from gemini_ai import transcribe_audio, select_best_clips, generate_youtube_metadata, timestamp_to_seconds
+from video_processor import cut_clip, mix_audio, add_subtitles, cleanup_temp_files
+
+
+def extract_clip_words(all_word_timings: list[dict], start_sec: float, end_sec: float) -> list[dict]:
+    """Extract word timings that fall within a clip's time range.
+
+    Adjusts timestamps to be relative to the clip start (so they start at 0).
+    Returns timings in the format expected by create_word_srt: start_ms/end_ms.
+    """
+    clip_words = []
+    for w in all_word_timings:
+        w_start = w["start"]
+        w_end = w["end"]
+        if w_start >= start_sec and w_end <= end_sec + 0.5:
+            clip_words.append({
+                "word": w["word"],
+                "start_ms": int((w_start - start_sec) * 1000),
+                "end_ms": int((w_end - start_sec) * 1000),
+            })
+    return clip_words
 
 
 def process_video(video_url: str, video_title: str = "Unknown", progress_callback=None):
-    """Run the full pipeline on a single video.
-
-    Args:
-        video_url: YouTube video URL
-        video_title: Title of the video
-        progress_callback: Optional function(percent, step_name) to report progress
-    """
+    """Run the full pipeline on a single video."""
     def update_progress(percent: int, step: str):
-        """Update progress via callback and console."""
         print(f"[{percent}%] {step}")
         if progress_callback:
             progress_callback(percent, step)
@@ -43,9 +51,8 @@ def process_video(video_url: str, video_title: str = "Unknown", progress_callbac
     print(f"URL: {video_url}")
     print(f"{'='*60}\n")
 
-    # Pipeline has 5 initial steps + 5 steps per clip (assuming NUM_CLIPS clips)
-    # Total steps: 5 + (NUM_CLIPS * 5) = 5 + 5 = 10 steps for 1 clip
-    total_steps = 5 + (NUM_CLIPS * 5)
+    # 5 initial steps + 3 per clip (cut, mix, subtitles+metadata)
+    total_steps = 5 + (NUM_CLIPS * 3)
     current_step = 0
 
     def step_progress(step_name: str):
@@ -71,10 +78,10 @@ def process_video(video_url: str, video_title: str = "Unknown", progress_callbac
     audio_path = extract_audio(video_path)
     step_progress(f"Audio extracted: {audio_path.name}")
 
-    # Step 4: Transcribe with Groq
+    # Step 4: Transcribe with Groq (get text + word-level timestamps)
     try:
-        transcript = transcribe_audio(audio_path)
-        step_progress(f"Transcribed: {len(transcript)} chars")
+        transcript, word_timings = transcribe_audio(audio_path)
+        step_progress(f"Transcribed: {len(transcript)} chars, {len(word_timings)} words")
     finally:
         gc.collect()
 
@@ -82,7 +89,7 @@ def process_video(video_url: str, video_title: str = "Unknown", progress_callbac
     transcript_path = DOWNLOADS_DIR / f"{video_path.stem}_transcript.txt"
     transcript_path.write_text(transcript, encoding="utf-8")
 
-    # Step 5: Select best clips
+    # Step 5: Select best clips (AI-powered smart clipping)
     clips = select_best_clips(transcript, video_title, video_path=video_path)
     step_progress(f"Found {len(clips)} clips")
 
@@ -98,56 +105,24 @@ def process_video(video_url: str, video_title: str = "Unknown", progress_callbac
         start = timestamp_to_seconds(clip_data["start_time"])
         end = timestamp_to_seconds(clip_data["end_time"])
 
-        # Get transcript segment for this clip
-        clip_transcript = clip_data.get("hook", "") + " " + clip_data.get("reason", "")
-
-        # Generate voiceover script
-        vo_script = generate_voiceover_script(clip_transcript, clip_data["title"], video_title)
-        step_progress(f"Clip {clip_num}: Generated script")
-
-        # Save script for reference
-        script_path = CLIPS_DIR / f"script_{clip_num}.txt"
-        script_path.write_text(vo_script, encoding="utf-8")
-
-        # Generate voiceover audio FIRST to get duration and word timings
-        vo_audio_path = CLIPS_DIR / f"voiceover_{clip_num}.mp3"
-        _, word_timings = generate_voiceover_audio(vo_script, vo_audio_path)
-        step_progress(f"Clip {clip_num}: Generated voiceover ({len(word_timings)} words)")
-
-        # Calculate required clip duration: voiceover duration + 2s delay + 1s buffer
-        if word_timings:
-            vo_duration_ms = word_timings[-1]["end_ms"]
-            required_duration = (vo_duration_ms / 1000) + 2 + 1  # voiceover + delay + buffer
-        else:
-            required_duration = end - start
-
-        # Extend clip end time if voiceover is longer than the selected clip
-        original_duration = end - start
-        if required_duration > original_duration:
-            print(f"[CLIP] Extending clip from {original_duration:.1f}s to {required_duration:.1f}s to fit voiceover")
-            end = start + required_duration
-
-        # Cut clip from video (now with correct duration for voiceover)
+        # Cut clip from video (9:16 crop)
         clip_path = cut_clip(video_path, start, end, clip_num)
         step_progress(f"Clip {clip_num}: Cut video ({end - start:.1f}s)")
 
-        # Rainbow background + overlay in single pass (memory efficient)
-        combined_path = create_rainbow_composite(clip_path, clip_num)
-        step_progress(f"Clip {clip_num}: Rainbow background applied")
+        # Mix original audio + background music
+        mixed_path = mix_audio(clip_path, music_path, clip_num)
 
-        # Delete the raw clip immediately to free disk/memory
-        try:
-            clip_path.unlink()
-        except Exception:
-            pass
+        # Extract word timings from Whisper that fall in this clip's range
+        clip_word_timings = extract_clip_words(word_timings, start, end)
+        print(f"  -> Found {len(clip_word_timings)} words in clip range")
 
-        # Mix voiceover + background music with combined clip
-        mixed_path = mix_voiceover(combined_path, vo_audio_path, music_path, clip_num)
-        
-        # Burn subtitles (this also moves the file to OUTPUT_DIR)
+        # Get the raw transcript text for this clip (fallback for subtitles)
+        clip_text_parts = [w["word"] for w in clip_word_timings]
+        clip_text = " ".join(clip_text_parts) if clip_text_parts else clip_data.get("hook", "")
+
+        # Burn subtitles
         try:
-            final_path = add_subtitles(mixed_path, vo_script, clip_num, word_timings)
-            # Ensure it's in OUTPUT_DIR even if add_subtitles returned the input path
+            final_path = add_subtitles(mixed_path, clip_text, clip_num, clip_word_timings)
             if final_path.parent != OUTPUT_DIR:
                 dest = OUTPUT_DIR / f"clip_{clip_num}.mp4"
                 shutil.copy(final_path, dest)
@@ -158,8 +133,8 @@ def process_video(video_url: str, video_title: str = "Unknown", progress_callbac
             shutil.copy(mixed_path, final_path)
 
         final_outputs.append(final_path)
-        step_progress(f"Clip {clip_num}: Mixed audio & subtitles")
-        
+        step_progress(f"Clip {clip_num}: Subtitles burned")
+
         gc.collect()
 
         # Generate YouTube metadata
@@ -190,19 +165,18 @@ def process_video(video_url: str, video_title: str = "Unknown", progress_callbac
     # Cleanup temp files
     cleanup_temp_files()
 
-    # Clean up downloaded video and audio
     try:
         if video_path.exists(): video_path.unlink()
         if audio_path.exists(): audio_path.unlink()
     except Exception:
         pass
-    
+
     gc.collect()
 
     print(f"\n{'='*60}")
     print(f"DONE! {len(final_outputs)} clips ready in: {OUTPUT_DIR}")
     for f in final_outputs:
-        print(f"  → {f.name}")
+        print(f"  -> {f.name}")
     print(f"{'='*60}\n")
 
     return {"files": final_outputs, "clips_metadata": clips_metadata}

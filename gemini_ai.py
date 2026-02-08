@@ -33,21 +33,27 @@ def _get_provider() -> str:
         return "none"
 
 
-def transcribe_audio(audio_path: Path) -> str:
-    """Use Groq's Whisper-large-v3 to get a timestamped transcript."""
+def transcribe_audio(audio_path: Path) -> tuple[str, list[dict]]:
+    """Use Groq's Whisper-large-v3 to get a timestamped transcript + word timings.
+
+    Returns:
+        (formatted_transcript, word_timings)
+        word_timings: [{"word": str, "start": float, "end": float}, ...]
+    """
     if not groq_client:
         raise RuntimeError("GROQ_API_KEY required for transcription (Whisper).")
 
     print(f"[AI-Groq] Transcribing audio with Whisper: {audio_path.name}")
-    
+
     with open(audio_path, "rb") as file:
         transcription = groq_client.audio.transcriptions.create(
             file=(audio_path.name, file),
             model=WHISPER_MODEL,
             response_format="verbose_json",
+            timestamp_granularities=["word", "segment"],
         )
-    
-    # Format transcript with timestamps
+
+    # Format transcript with timestamps (for AI clip selection)
     formatted_transcript = ""
     for segment in transcription.segments:
         start = segment['start']
@@ -56,8 +62,36 @@ def transcribe_audio(audio_path: Path) -> str:
         start_str = f"{int(start // 60):02d}:{int(start % 60):02d}"
         end_str = f"{int(end // 60):02d}:{int(end % 60):02d}"
         formatted_transcript += f"[{start_str} - {end_str}] {text}\n"
-    
-    return formatted_transcript
+
+    # Extract word-level timings
+    word_timings = []
+    if hasattr(transcription, 'words') and transcription.words:
+        for w in transcription.words:
+            word_timings.append({
+                "word": w.get("word", w.get("text", "")),
+                "start": w.get("start", 0.0),
+                "end": w.get("end", 0.0),
+            })
+        print(f"[AI-Groq] Got {len(word_timings)} word-level timestamps")
+    else:
+        # Fallback: estimate word timings from segments
+        print("[AI-Groq] No word-level timestamps, estimating from segments")
+        for segment in transcription.segments:
+            seg_words = segment['text'].strip().split()
+            if not seg_words:
+                continue
+            seg_start = segment['start']
+            seg_end = segment['end']
+            seg_duration = seg_end - seg_start
+            word_duration = seg_duration / len(seg_words)
+            for i, word in enumerate(seg_words):
+                word_timings.append({
+                    "word": word,
+                    "start": seg_start + i * word_duration,
+                    "end": seg_start + (i + 1) * word_duration,
+                })
+
+    return formatted_transcript, word_timings
 
 
 def select_best_clips(transcript: str, video_title: str, video_path: Path = None) -> list[dict]:
@@ -169,55 +203,6 @@ Return ONLY valid JSON (no markdown, no code blocks), an array of objects:
         }]
             
     return clips_list[:NUM_CLIPS]
-
-
-def generate_voiceover_script(clip_transcript: str, clip_title: str, video_title: str) -> str:
-    """Generate a commentary voiceover script using Llama 3 or Gemini."""
-    provider = _get_provider()
-    print(f"[AI-{provider.title()}] Generating voiceover script for: {clip_title}")
-
-    prompt = f"""You are a professional video commentator creating transformative content.
-
-ORIGINAL VIDEO: "{video_title}"
-CLIP: "{clip_title}"
-CLIP TRANSCRIPT:
-{clip_transcript}
-
-Write a SHORT voiceover commentary script (4-6 sentences) that:
-1. Opens with a hook that adds YOUR perspective (don't repeat what's said in the clip)
-2. Adds analysis, context, or insight that the original doesn't provide
-3. Shares an opinion or reaction that makes this YOUR content
-4. Ends with a thought-provoking statement or call to engagement
-
-RULES:
-- Do NOT narrate or summarize what's happening
-- DO add your own analysis, facts, or perspective
-- Keep it concise — this plays OVER the original audio
-- Sound natural, like a real commentator
-
-Return ONLY the voiceover script text."""
-
-    try:
-        if provider == "gemini":
-            try:
-                model = genai.GenerativeModel(GEMINI_MODEL)
-                result = model.generate_content(prompt)
-                return result.text.strip()
-            except Exception as gem_err:
-                print(f"[AI-Gemini] Voiceover failed: {gem_err}. Falling back to Groq...")
-                provider = "groq"
-
-        if provider == "groq":
-            response = groq_client.chat.completions.create(
-                model=GROQ_MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.9,
-            )
-            return response.choices[0].message.content.strip()
-            
-    except Exception as e:
-        print(f"[AI-{provider.title()}] Voiceover generation failed: {e}")
-        return "Check this out! What do you think about this moment? Let me know in the comments below!"
 
 
 def generate_youtube_metadata(clip_title: str, clip_hook: str, video_title: str) -> dict:

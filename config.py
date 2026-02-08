@@ -31,18 +31,14 @@ CLIP_MAX_SECONDS = 60    # Max 60 seconds per clip
 # ── Background Music ───────────────────────────────────────
 # NCS / copyright-free playlist — a random track is picked each run
 MUSIC_PLAYLIST_URL = "https://www.youtube.com/watch?v=zeKCzmAKKP4&list=PLGBKsNyGY-afmc5ff3n1HOYGTmZO1xJGw"
-MUSIC_VOLUME = "0.10"    # Background music at 10% (subtle, behind voiceover)
-
-# ── Voice Settings (edge-tts) ──────────────────────────────
-TTS_VOICE = "en-US-GuyNeural"
+MUSIC_VOLUME = "0.10"    # Background music at 10% (subtle)
 
 # ── FFmpeg Quality ──────────────────────────────────────────
-# HF free tier has 2 vCPU — use "medium" preset to avoid timeout
 VIDEO_CODEC = "libx264"
 VIDEO_CRF = "23"
 VIDEO_PRESET = "faster"
 AUDIO_BITRATE = "192k"
-ORIGINAL_AUDIO_VOLUME = "0.15"
+ORIGINAL_AUDIO_VOLUME = "0.8"
 
 # ── Output Resolution (9:16 vertical) ─────────────────────
 OUTPUT_WIDTH = 720
